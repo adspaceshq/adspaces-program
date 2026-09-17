@@ -18,6 +18,10 @@ declare_id!("6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW");
 pub mod spotboard {
     use super::*;
 
+    pub fn close_spot(ctx: Context<CloseSpot>) -> Result<()> {
+        instructions::close_spot::handle(ctx)
+    }
+
     pub fn withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
         instructions::withdraw_seller::handle(ctx)
     }
