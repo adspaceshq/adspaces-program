@@ -18,6 +18,10 @@ declare_id!("6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW");
 pub mod spotboard {
     use super::*;
 
+    pub fn add_spot(ctx: Context<AddSpot>, price: u64) -> Result<()> {
+        instructions::add_spot::handle(ctx, price)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn create_listing(
         ctx: Context<CreateListing>,
