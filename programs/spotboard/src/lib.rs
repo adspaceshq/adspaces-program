@@ -18,6 +18,10 @@ declare_id!("6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW");
 pub mod spotboard {
     use super::*;
 
+    pub fn withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
+        instructions::withdraw_seller::handle(ctx)
+    }
+
     pub fn place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
         instructions::place_bid::handle(ctx, amount)
     }
