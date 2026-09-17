@@ -29,7 +29,7 @@ pub struct CreateListing<'info> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn handle(
+pub fn handle_create_listing(
     ctx: Context<CreateListing>,
     slug_hash: [u8; 16],
     metadata_uri: String,

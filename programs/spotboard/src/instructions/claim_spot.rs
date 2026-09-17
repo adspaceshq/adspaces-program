@@ -47,7 +47,7 @@ pub struct ClaimSpot<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-pub fn handle(ctx: Context<ClaimSpot>) -> Result<()> {
+pub fn handle_claim_spot(ctx: Context<ClaimSpot>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     require!(
         now < ctx.accounts.listing.deadline,

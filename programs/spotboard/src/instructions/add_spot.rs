@@ -50,7 +50,7 @@ pub struct AddSpot<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
-pub fn handle(ctx: Context<AddSpot>, price: u64) -> Result<()> {
+pub fn handle_add_spot(ctx: Context<AddSpot>, price: u64) -> Result<()> {
     let listing = &mut ctx.accounts.listing;
     require!(
         listing.spot_count < MAX_SPOTS_PER_LISTING,

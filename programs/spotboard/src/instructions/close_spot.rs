@@ -37,7 +37,7 @@ pub struct CloseSpot<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-pub fn handle(ctx: Context<CloseSpot>) -> Result<()> {
+pub fn handle_close_spot(ctx: Context<CloseSpot>) -> Result<()> {
     let listing_key = ctx.accounts.listing.key();
     let spot_index = ctx.accounts.spot.index;
     let spot_bump = ctx.accounts.spot.bump;

@@ -19,23 +19,23 @@ pub mod spotboard {
     use super::*;
 
     pub fn close_spot(ctx: Context<CloseSpot>) -> Result<()> {
-        instructions::close_spot::handle(ctx)
+        instructions::close_spot::handle_close_spot(ctx)
     }
 
     pub fn withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
-        instructions::withdraw_seller::handle(ctx)
+        instructions::withdraw_seller::handle_withdraw_seller(ctx)
     }
 
     pub fn place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
-        instructions::place_bid::handle(ctx, amount)
+        instructions::place_bid::handle_place_bid(ctx, amount)
     }
 
     pub fn claim_spot(ctx: Context<ClaimSpot>) -> Result<()> {
-        instructions::claim_spot::handle(ctx)
+        instructions::claim_spot::handle_claim_spot(ctx)
     }
 
     pub fn add_spot(ctx: Context<AddSpot>, price: u64) -> Result<()> {
-        instructions::add_spot::handle(ctx, price)
+        instructions::add_spot::handle_add_spot(ctx, price)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -49,7 +49,7 @@ pub mod spotboard {
         min_increment: u64,
         double_up: bool,
     ) -> Result<()> {
-        instructions::create_listing::handle(
+        instructions::create_listing::handle_create_listing(
             ctx,
             slug_hash,
             metadata_uri,

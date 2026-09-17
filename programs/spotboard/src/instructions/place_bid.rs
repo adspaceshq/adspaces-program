@@ -57,7 +57,7 @@ pub struct PlaceBid<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-pub fn handle(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
+pub fn handle_place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     require!(
         now < ctx.accounts.listing.deadline,

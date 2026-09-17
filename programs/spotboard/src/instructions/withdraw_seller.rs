@@ -53,7 +53,7 @@ pub struct WithdrawSeller<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-pub fn handle(ctx: Context<WithdrawSeller>) -> Result<()> {
+pub fn handle_withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     require!(
         now >= ctx.accounts.listing.deadline,
