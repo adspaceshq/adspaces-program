@@ -1,0 +1,241 @@
+mod common;
+
+use anchor_lang::{
+    solana_program::{instruction::Instruction, system_program, sysvar},
+    InstructionData, ToAccountMetas,
+};
+use solana_keypair::Keypair;
+use solana_signer::Signer;
+use spl_token::state;
+
+use common::*;
+
+const PRICE: u64 = 150_000_000; // 150 USDC
+const FEE_BPS: u128 = 250;
+
+fn create_fixed_listing(
+    env: &mut Env,
+    seller: &Keypair,
+    treasury: &Pubkey,
+    slug_hash: [u8; 16],
+    deadline: i64,
+) -> Pubkey {
+    let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
+    let ix = Instruction::new_with_bytes(
+        program_id(),
+        spotboard::instruction::CreateListing {
+            slug_hash,
+            metadata_uri: "https://spotboard.test/api/listings/settle".to_string(),
+            mode: spotboard::constants::MODE_FIXED,
+            deadline,
+            artwork_close: deadline,
+            min_increment: 0,
+            double_up: false,
+        }
+        .data(),
+        spotboard::accounts::CreateListing {
+            seller: seller.pubkey(),
+            listing,
+            usdc_mint: env.usdc,
+            treasury: *treasury,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[ix], seller, &[]).unwrap();
+    listing
+}
+
+fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) -> (Pubkey, Pubkey) {
+    let index = read_listing(&env.svm, listing).spot_count;
+    let (spot, _) = spot_pda(listing, index);
+    let (vault, _) = vault_pda(&spot);
+    let ix = Instruction::new_with_bytes(
+        program_id(),
+        spotboard::instruction::AddSpot { price }.data(),
+        spotboard::accounts::AddSpot {
+            seller: seller.pubkey(),
+            listing: *listing,
+            spot,
+            vault,
+            usdc_mint: env.usdc,
+            system_program: system_program::ID,
+            token_program: token_program_id(),
+            rent: sysvar::rent::ID,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[ix], seller, &[]).unwrap();
+    (spot, vault)
+}
+
+fn empty_token_account(env: &mut Env, funder: &Keypair, owner: &Pubkey) -> Pubkey {
+    let account = Keypair::new();
+    let create = anchor_lang::solana_program::system_instruction::create_account(
+        &funder.pubkey(),
+        &account.pubkey(),
+        RENT_FUNDING,
+        state::Account::LEN as u64,
+        &token_program_id(),
+    );
+    send(&mut env.svm, &[create], funder, &[&account]).unwrap();
+    let init = spl_token::instruction::initialize_account(
+        &token_program_id(),
+        &account.pubkey(),
+        &env.usdc,
+        owner,
+    )
+    .unwrap();
+    send(&mut env.svm, &[init], funder, &[]).unwrap();
+    account.pubkey()
+}
+
+fn claim(env: &mut Env, buyer: &Keypair, buyer_ata: &Pubkey, listing: &Pubkey, spot: &Pubkey, vault: &Pubkey) {
+    let ix = Instruction::new_with_bytes(
+        program_id(),
+        spotboard::instruction::ClaimSpot {}.data(),
+        spotboard::accounts::ClaimSpot {
+            buyer: buyer.pubkey(),
+            listing: *listing,
+            spot: *spot,
+            vault: *vault,
+            buyer_ata: *buyer_ata,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[ix], buyer, &[]).unwrap();
+}
+
+fn withdraw(
+    env: &mut Env,
+    seller: &Keypair,
+    listing: &Pubkey,
+    spot: &Pubkey,
+    vault: &Pubkey,
+    seller_ata: &Pubkey,
+    treasury_ata: &Pubkey,
+) -> litesvm::types::TransactionResult {
+    let ix = Instruction::new_with_bytes(
+        program_id(),
+        spotboard::instruction::WithdrawSeller {}.data(),
+        spotboard::accounts::WithdrawSeller {
+            seller: seller.pubkey(),
+            listing: *listing,
+            spot: *spot,
+            vault: *vault,
+            seller_ata: *seller_ata,
+            treasury_ata: *treasury_ata,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[ix], seller, &[])
+}
+
+#[test]
+fn withdraw_before_deadline_fails() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let treasury = Keypair::new();
+
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, &treasury.pubkey(), [20u8; 16], now + 30 * 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+
+    let (buyer, buyer_ata) = env.new_user(1_000_000_000);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
+    let treasury_ata = empty_token_account(&mut env, &seller, &treasury.pubkey());
+    assert!(withdraw(&mut env, &seller, &listing, &spot, &vault, &seller_ata, &treasury_ata).is_err());
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+}
+
+#[test]
+fn withdraw_pays_seller_minus_fee_and_closes_vault() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let treasury = Keypair::new();
+
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, &treasury.pubkey(), [21u8; 16], now + 30 * 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+
+    let (buyer, buyer_ata) = env.new_user(1_000_000_000);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+
+    env.warp_to_timestamp(now + 31 * 86_400);
+
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
+    let treasury_ata = empty_token_account(&mut env, &seller, &treasury.pubkey());
+    withdraw(&mut env, &seller, &listing, &spot, &vault, &seller_ata, &treasury_ata).unwrap();
+
+    let expected_fee = PRICE as u128 * FEE_BPS / 10_000;
+    assert_eq!(token_balance(&env.svm, &seller_ata), PRICE - expected_fee as u64);
+    assert_eq!(token_balance(&env.svm, &treasury_ata), expected_fee as u64);
+    assert_eq!(read_spot(&env.svm, &spot).status, spotboard::constants::SPOT_FINALIZED);
+    assert!(env.svm.get_account(&vault).is_none());
+}
+
+#[test]
+fn close_spot_reclaims_unfunded_vault() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let treasury = Keypair::new();
+
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, &treasury.pubkey(), [22u8; 16], now + 30 * 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+
+    let close = Instruction::new_with_bytes(
+        program_id(),
+        spotboard::instruction::CloseSpot {}.data(),
+        spotboard::accounts::CloseSpot {
+            seller: seller.pubkey(),
+            listing,
+            spot,
+            vault,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[close], &seller, &[]).unwrap();
+    assert_eq!(read_spot(&env.svm, &spot).status, spotboard::constants::SPOT_CANCELLED);
+    assert!(env.svm.get_account(&vault).is_none());
+}
+
+#[test]
+fn close_funded_spot_fails() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let treasury = Keypair::new();
+
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, &treasury.pubkey(), [23u8; 16], now + 30 * 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+
+    let (buyer, buyer_ata) = env.new_user(1_000_000_000);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+
+    let close = Instruction::new_with_bytes(
+        program_id(),
+        spotboard::instruction::CloseSpot {}.data(),
+        spotboard::accounts::CloseSpot {
+            seller: seller.pubkey(),
+            listing,
+            spot,
+            vault,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    );
+    assert!(send(&mut env.svm, &[close], &seller, &[]).is_err());
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+}
