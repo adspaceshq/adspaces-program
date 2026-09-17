@@ -1,0 +1,20 @@
+# anchor / solana
+target/
+.anchor/
+test-ledger/
+.anchorFold.txt
+*.so
+
+# program deploy keypairs (pubkey lives in Anchor.toml + lib.rs)
+*-keypair.json
+target/deploy/
+
+# env
+.env
+.env.local
+
+# node
+node_modules/
+
+# os
+.DS_Store
