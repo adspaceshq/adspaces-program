@@ -18,6 +18,10 @@ declare_id!("6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW");
 pub mod spotboard {
     use super::*;
 
+    pub fn place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
+        instructions::place_bid::handle(ctx, amount)
+    }
+
     pub fn claim_spot(ctx: Context<ClaimSpot>) -> Result<()> {
         instructions::claim_spot::handle(ctx)
     }
