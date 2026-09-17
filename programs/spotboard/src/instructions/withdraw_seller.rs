@@ -85,7 +85,7 @@ pub fn handle(ctx: Context<WithdrawSeller>) -> Result<()> {
     if fee > 0 {
         token::transfer(
             CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.token_program.key(),
                 token::Transfer {
                     from: ctx.accounts.vault.to_account_info(),
                     to: ctx.accounts.treasury_ata.to_account_info(),
@@ -99,7 +99,7 @@ pub fn handle(ctx: Context<WithdrawSeller>) -> Result<()> {
 
     token::transfer(
         CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
+            ctx.accounts.token_program.key(),
             token::Transfer {
                 from: ctx.accounts.vault.to_account_info(),
                 to: ctx.accounts.seller_ata.to_account_info(),
@@ -111,7 +111,7 @@ pub fn handle(ctx: Context<WithdrawSeller>) -> Result<()> {
     )?;
 
     token::close_account(CpiContext::new_with_signer(
-        ctx.accounts.token_program.to_account_info(),
+        ctx.accounts.token_program.key(),
         token::CloseAccount {
             account: ctx.accounts.vault.to_account_info(),
             destination: ctx.accounts.seller.to_account_info(),

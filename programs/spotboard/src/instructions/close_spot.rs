@@ -49,7 +49,7 @@ pub fn handle(ctx: Context<CloseSpot>) -> Result<()> {
     ]];
 
     token::close_account(CpiContext::new_with_signer(
-        ctx.accounts.token_program.to_account_info(),
+        ctx.accounts.token_program.key(),
         token::CloseAccount {
             account: ctx.accounts.vault.to_account_info(),
             destination: ctx.accounts.seller.to_account_info(),

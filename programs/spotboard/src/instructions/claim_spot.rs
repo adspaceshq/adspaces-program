@@ -57,7 +57,7 @@ pub fn handle(ctx: Context<ClaimSpot>) -> Result<()> {
     let price = ctx.accounts.spot.price;
     token::transfer(
         CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
+            ctx.accounts.token_program.key(),
             token::Transfer {
                 from: ctx.accounts.buyer_ata.to_account_info(),
                 to: ctx.accounts.vault.to_account_info(),
