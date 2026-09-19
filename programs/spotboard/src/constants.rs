@@ -27,7 +27,7 @@ pub const PLATFORM_FEE_BPS: u16 = 250;
 
 /// USDC mint on devnet (test USDC).
 #[constant]
-pub const USDC_MINT_DEVNET: &str = "4zMMC9srt5Ri5X14GAgXhaHii3Gn9VFFqjoZ7zbyi";
+pub const USDC_MINT_DEVNET: &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
 /// USDC mint on mainnet-beta.
 #[constant]
