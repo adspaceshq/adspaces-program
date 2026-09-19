@@ -1,14 +1,22 @@
 use anchor_lang::{
-    prelude::Pubkey,
-    solana_program::{clock::Clock, instruction::Instruction, system_instruction},
+    solana_program::{
+        clock::Clock,
+        instruction::{AccountMeta, Instruction},
+        program_pack::Pack,
+        system_instruction,
+    },
     AccountDeserialize,
 };
+#[allow(deprecated)]
+use spl_token::state;
+
+pub use anchor_lang::prelude::Pubkey;
+pub use anchor_lang::solana_program::program_pack::Pack;
 use litesvm::LiteSVM;
 use solana_keypair::Keypair;
 use solana_message::{Message, VersionedMessage};
 use solana_signer::Signer;
 use solana_transaction::versioned::VersionedTransaction;
-use spl_token::state;
 
 pub const PROGRAM_BYTES: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -151,6 +159,10 @@ impl Env {
         clock.unix_timestamp = timestamp;
         self.set_clock(&clock);
     }
+}
+
+pub fn new_ix(program_id: Pubkey, data: Vec<u8>, accounts: Vec<AccountMeta>) -> Instruction {
+    Instruction::new_with_bytes(program_id, &data, accounts)
 }
 
 /// Builds, signs and sends one transaction with the latest blockhash.
