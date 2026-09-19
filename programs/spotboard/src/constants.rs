@@ -17,7 +17,7 @@ pub const VAULT_SEED: &[u8] = b"vault";
 pub const MAX_SPOTS_PER_LISTING: u8 = 60;
 
 /// Max length of the off-chain metadata URI stored on the listing.
-#[constant]
+/// Plain const: `usize` has no IDL representation, so `#[constant]` cannot be used.
 pub const METADATA_URI_MAX_LEN: usize = 200;
 
 /// Platform fee in basis points: 250 = 2.5%. Taken once at seller withdraw,
