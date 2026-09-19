@@ -2,7 +2,6 @@ use anchor_lang::{
     solana_program::{
         clock::Clock,
         instruction::{AccountMeta, Instruction},
-        program_pack::Pack,
         system_instruction,
     },
     AccountDeserialize,
