@@ -36,7 +36,7 @@ pub enum SpotboardError {
     BidTooLow,
     #[msg("Takeover bid must be at least double the current bid.")]
     BidMustDouble,
-    #[msg("Seller can only withdraw after the deadline.")]
+    #[msg("Settlement is only available after the deadline.")]
     WithdrawTooEarly,
     #[msg("Spot has no funds to withdraw.")]
     SpotNotFunded,

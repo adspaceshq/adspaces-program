@@ -10,14 +10,14 @@ use crate::{
 
 #[derive(Accounts)]
 pub struct WithdrawSeller<'info> {
-    #[account(mut)]
-    pub seller: Signer<'info>,
+    pub caller: Signer<'info>,
     #[account(
-        seeds = [LISTING_SEED, seller.key().as_ref(), listing.slug_hash.as_ref()],
+        seeds = [LISTING_SEED, listing.seller.as_ref(), listing.slug_hash.as_ref()],
         bump = listing.bump,
-        has_one = seller @ SpotboardError::Unauthorized,
     )]
     pub listing: Account<'info, Listing>,
+    #[account(mut, address = listing.seller @ SpotboardError::Unauthorized)]
+    pub seller: SystemAccount<'info>,
     #[account(
         mut,
         seeds = [SPOT_SEED, listing.key().as_ref(), &[spot.index]],

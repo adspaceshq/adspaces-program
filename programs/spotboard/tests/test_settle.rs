@@ -114,10 +114,11 @@ fn claim(
     send(&mut env.svm, &[ix], buyer, &[]).unwrap();
 }
 
-#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err, clippy::too_many_arguments)]
 fn withdraw(
     env: &mut Env,
-    seller: &Keypair,
+    caller: &Keypair,
+    seller: &Pubkey,
     listing: &Pubkey,
     spot: &Pubkey,
     vault: &Pubkey,
@@ -128,8 +129,9 @@ fn withdraw(
         program_id(),
         spotboard::instruction::WithdrawSeller {}.data(),
         spotboard::accounts::WithdrawSeller {
-            seller: seller.pubkey(),
+            caller: caller.pubkey(),
             listing: *listing,
+            seller: *seller,
             spot: *spot,
             vault: *vault,
             seller_ata: *seller_ata,
@@ -139,7 +141,7 @@ fn withdraw(
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[ix], seller, &[])
+    send(&mut env.svm, &[ix], caller, &[])
 }
 
 #[test]
@@ -160,6 +162,7 @@ fn withdraw_before_deadline_fails() {
     assert!(withdraw(
         &mut env,
         &seller,
+        &seller.pubkey(),
         &listing,
         &spot,
         &vault,
@@ -190,6 +193,7 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
     withdraw(
         &mut env,
         &seller,
+        &seller.pubkey(),
         &listing,
         &spot,
         &vault,
