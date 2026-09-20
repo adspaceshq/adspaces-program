@@ -1,12 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::Mint;
 
-use crate::{
-    constants::*,
-    error::SpotboardError,
-    events::ListingCreated,
-    state::Listing,
-};
+use crate::{constants::*, error::SpotboardError, events::ListingCreated, state::Listing};
 
 #[derive(Accounts)]
 #[instruction(slug_hash: [u8; 16])]

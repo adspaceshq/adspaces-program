@@ -8,8 +8,6 @@ use crate::{
     state::{Listing, Spot},
 };
 
-/// Cancels a spot that was never paid: closes the empty vault so its rent
-/// returns to the seller. Funded spots can only exit via `withdraw_seller`.
 #[derive(Accounts)]
 pub struct CloseSpot<'info> {
     #[account(mut)]
@@ -41,12 +39,8 @@ pub fn handle_close_spot(ctx: Context<CloseSpot>) -> Result<()> {
     let listing_key = ctx.accounts.listing.key();
     let spot_index = ctx.accounts.spot.index;
     let spot_bump = ctx.accounts.spot.bump;
-    let signer_seeds: &[&[&[u8]]] = &[&[
-        SPOT_SEED,
-        listing_key.as_ref(),
-        &[spot_index],
-        &[spot_bump],
-    ]];
+    let signer_seeds: &[&[&[u8]]] =
+        &[&[SPOT_SEED, listing_key.as_ref(), &[spot_index], &[spot_bump]]];
 
     token::close_account(CpiContext::new_with_signer(
         ctx.accounts.token_program.key(),

@@ -8,9 +8,6 @@ use crate::{
     state::{Listing, Spot},
 };
 
-/// Seller payout after the deadline: vault balance minus the platform fee
-/// goes to the seller, the fee goes to the treasury ATA, and the vault is
-/// closed so its rent returns to the seller.
 #[derive(Accounts)]
 pub struct WithdrawSeller<'info> {
     #[account(mut)]
@@ -75,12 +72,8 @@ pub fn handle_withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
     let listing_key = ctx.accounts.listing.key();
     let spot_index = ctx.accounts.spot.index;
     let spot_bump = ctx.accounts.spot.bump;
-    let signer_seeds: &[&[&[u8]]] = &[&[
-        SPOT_SEED,
-        listing_key.as_ref(),
-        &[spot_index],
-        &[spot_bump],
-    ]];
+    let signer_seeds: &[&[&[u8]]] =
+        &[&[SPOT_SEED, listing_key.as_ref(), &[spot_index], &[spot_bump]]];
 
     if fee > 0 {
         token::transfer(

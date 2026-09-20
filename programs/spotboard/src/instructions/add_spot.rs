@@ -8,10 +8,6 @@ use crate::{
     state::{Listing, Spot},
 };
 
-/// Creates one spot plus its per-spot USDC vault.
-/// The frontend packs several `add_spot` instructions into one transaction
-/// to publish a whole listing; the index is always `listing.spot_count`,
-/// so concurrent calls cannot collide or skip.
 #[derive(Accounts)]
 pub struct AddSpot<'info> {
     #[account(mut)]
@@ -70,9 +66,7 @@ pub fn handle_add_spot(ctx: Context<AddSpot>, price: u64) -> Result<()> {
     spot.bump = ctx.bumps.spot;
     spot.vault_bump = ctx.bumps.vault;
 
-    listing.spot_count = index
-        .checked_add(1)
-        .ok_or(SpotboardError::MathOverflow)?;
+    listing.spot_count = index.checked_add(1).ok_or(SpotboardError::MathOverflow)?;
 
     emit!(SpotAdded {
         listing: listing.key(),

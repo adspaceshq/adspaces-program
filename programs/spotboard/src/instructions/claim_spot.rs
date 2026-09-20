@@ -8,8 +8,6 @@ use crate::{
     state::{Listing, Spot},
 };
 
-/// Claims a fixed-price spot: buyer pays `price` USDC into the per-spot
-/// vault. Seller withdraws (minus the 2.5% fee) after the deadline.
 #[derive(Accounts)]
 pub struct ClaimSpot<'info> {
     #[account(mut)]

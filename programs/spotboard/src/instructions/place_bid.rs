@@ -8,14 +8,6 @@ use crate::{
     state::{Listing, Spot},
 };
 
-/// Places an auction bid. The new bid is escrowed in the per-spot vault
-/// and the previous top bidder is refunded in full inside the same
-/// transaction, so no funds ever get stuck.
-///
-/// Minimums mirror the live campaigns:
-/// - first bid must meet the starting price (Vincent / Marc),
-/// - later bids must clear `min_increment` (Vincent: 10 EUR),
-/// - or must double the current bid when `double_up` is set (Marc).
 #[derive(Accounts)]
 pub struct PlaceBid<'info> {
     #[account(mut)]
@@ -68,7 +60,10 @@ pub fn handle_place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
     let current_bidder = ctx.accounts.spot.current_bidder;
 
     if current_bidder == Pubkey::default() {
-        require!(amount >= ctx.accounts.spot.price, SpotboardError::FirstBidTooLow);
+        require!(
+            amount >= ctx.accounts.spot.price,
+            SpotboardError::FirstBidTooLow
+        );
     } else if ctx.accounts.listing.double_up {
         let doubled = current_bid
             .checked_mul(2)
@@ -103,20 +98,13 @@ pub fn handle_place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
             prev.mint == ctx.accounts.listing.mint,
             SpotboardError::InvalidMint
         );
-        require!(
-            prev.owner == current_bidder,
-            SpotboardError::Unauthorized
-        );
+        require!(prev.owner == current_bidder, SpotboardError::Unauthorized);
 
         let listing_key = ctx.accounts.listing.key();
         let spot_index = ctx.accounts.spot.index;
         let spot_bump = ctx.accounts.spot.bump;
-        let signer_seeds: &[&[&[u8]]] = &[&[
-            SPOT_SEED,
-            listing_key.as_ref(),
-            &[spot_index],
-            &[spot_bump],
-        ]];
+        let signer_seeds: &[&[&[u8]]] =
+            &[&[SPOT_SEED, listing_key.as_ref(), &[spot_index], &[spot_bump]]];
         token::transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.key(),
