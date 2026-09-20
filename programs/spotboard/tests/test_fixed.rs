@@ -112,6 +112,7 @@ fn fixed_claim_moves_funds_into_vault() {
 
     let stored = read_spot(&env.svm, &spot);
     assert_eq!(stored.status, spotboard::constants::SPOT_FUNDED);
+    assert_eq!(stored.buyer, buyer.pubkey());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
     assert_eq!(token_balance(&env.svm, &buyer_ata), 1_000_000_000 - PRICE);
 }
