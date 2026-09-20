@@ -47,6 +47,11 @@ pub struct AddSpot<'info> {
 }
 
 pub fn handle_add_spot(ctx: Context<AddSpot>, price: u64) -> Result<()> {
+    require!(
+        Clock::get()?.unix_timestamp < ctx.accounts.listing.deadline,
+        SpotboardError::ListingClosed
+    );
+
     let listing = &mut ctx.accounts.listing;
     require!(
         listing.spot_count < MAX_SPOTS_PER_LISTING,
