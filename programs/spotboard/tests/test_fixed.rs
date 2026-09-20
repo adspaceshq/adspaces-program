@@ -274,3 +274,33 @@ fn claim_after_deadline_fails() {
     assert!(send(&mut env.svm, &[claim_ix], &buyer, &[]).is_err());
     assert_eq!(token_balance(&env.svm, &vault), 0);
 }
+
+#[test]
+fn add_spot_after_deadline_fails() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [6u8; 16]);
+    env.warp_to_timestamp(now + 31 * 86_400);
+
+    let (spot, _) = spot_pda(&listing, 0);
+    let (vault, _) = vault_pda(&spot);
+    let ix = new_ix(
+        program_id(),
+        spotboard::instruction::AddSpot { price: PRICE }.data(),
+        spotboard::accounts::AddSpot {
+            seller: seller.pubkey(),
+            listing,
+            spot,
+            vault,
+            usdc_mint: env.usdc,
+            system_program: system_program::ID,
+            token_program: token_program_id(),
+            rent: rent::ID,
+        }
+        .to_account_metas(None),
+    );
+
+    assert!(send(&mut env.svm, &[ix], &seller, &[]).is_err());
+}
