@@ -29,8 +29,8 @@ fn create_fixed_listing(env: &mut Env, seller: &Keypair, slug_hash: [u8; 16]) ->
         spotboard::accounts::CreateListing {
             seller: seller.pubkey(),
             listing,
+            config: env.config,
             usdc_mint: env.usdc,
-            treasury: Keypair::new().pubkey(),
             system_program: system_program::ID,
         }
         .to_account_metas(None),
@@ -194,8 +194,8 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
         spotboard::accounts::CreateListing {
             seller: seller.pubkey(),
             listing: auction_listing,
+            config: env.config,
             usdc_mint: env.usdc,
-            treasury: Keypair::new().pubkey(),
             system_program: system_program::ID,
         }
         .to_account_metas(None),
@@ -244,8 +244,8 @@ fn claim_after_deadline_fails() {
         spotboard::accounts::CreateListing {
             seller: seller.pubkey(),
             listing,
+            config: env.config,
             usdc_mint: env.usdc,
-            treasury: Keypair::new().pubkey(),
             system_program: system_program::ID,
         }
         .to_account_metas(None),

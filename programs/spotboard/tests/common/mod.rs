@@ -1,10 +1,12 @@
+#![allow(dead_code)]
+
 use anchor_lang::{
     solana_program::{
         clock::Clock,
         instruction::{AccountMeta, Instruction},
-        system_instruction,
+        system_instruction, system_program,
     },
-    AccountDeserialize,
+    AccountDeserialize, InstructionData, ToAccountMetas,
 };
 use spl_token_interface::state;
 
@@ -33,10 +35,8 @@ pub fn token_program_id() -> Pubkey {
     spl_token::ID
 }
 
-/// The devnet test-USDC address doubles as the test mint. The program only
-/// accepts the two known USDC mints, so tests plant a mint there.
-pub fn usdc_mint_address() -> Pubkey {
-    spotboard::constants::USDC_MINT_DEVNET.parse().unwrap()
+pub fn config_pda() -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[spotboard::constants::CONFIG_SEED], &program_id())
 }
 
 pub fn listing_pda(seller: &Pubkey, slug_hash: &[u8; 16]) -> (Pubkey, u8) {
@@ -68,6 +68,8 @@ pub struct Env {
     pub svm: LiteSVM,
     pub mint_authority: Keypair,
     pub usdc: Pubkey,
+    pub config: Pubkey,
+    pub treasury: Pubkey,
 }
 
 impl Env {
@@ -79,7 +81,7 @@ impl Env {
         svm.airdrop(&mint_authority.pubkey(), 10_000_000_000)
             .unwrap();
 
-        let usdc = usdc_mint_address();
+        let usdc = Pubkey::new_unique();
         let mint = state::Mint {
             mint_authority: spl_token::solana_program::program_option::COption::Some(
                 mint_authority.pubkey(),
@@ -103,10 +105,31 @@ impl Env {
         )
         .unwrap();
 
+        let (config, _) = config_pda();
+        let treasury = Pubkey::new_unique();
+        let initialize_config = new_ix(
+            program_id(),
+            spotboard::instruction::InitializeConfig {
+                treasury,
+                fee_bps: spotboard::constants::PLATFORM_FEE_BPS,
+            }
+            .data(),
+            spotboard::accounts::InitializeConfig {
+                authority: mint_authority.pubkey(),
+                config,
+                payment_mint: usdc,
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+        );
+        send(&mut svm, &[initialize_config], &mint_authority, &[]).unwrap();
+
         Self {
             svm,
             mint_authority,
             usdc,
+            config,
+            treasury,
         }
     }
 
@@ -154,12 +177,10 @@ impl Env {
         self.svm.get_sysvar::<Clock>()
     }
 
-    #[allow(dead_code)]
     pub fn set_clock(&mut self, clock: &Clock) {
         self.svm.set_sysvar::<Clock>(clock);
     }
 
-    #[allow(dead_code)]
     pub fn warp_to_timestamp(&mut self, timestamp: i64) {
         let mut clock = self.clock();
         clock.unix_timestamp = timestamp;
@@ -187,7 +208,6 @@ pub fn send(
     svm.send_transaction(tx)
 }
 
-#[allow(dead_code)]
 pub fn read_listing(svm: &LiteSVM, listing: &Pubkey) -> spotboard::state::Listing {
     let account = svm.get_account(listing).unwrap();
     let mut data: &[u8] = &account.data;
@@ -198,6 +218,12 @@ pub fn read_spot(svm: &LiteSVM, spot: &Pubkey) -> spotboard::state::Spot {
     let account = svm.get_account(spot).unwrap();
     let mut data: &[u8] = &account.data;
     spotboard::state::Spot::try_deserialize(&mut data).unwrap()
+}
+
+pub fn read_config(svm: &LiteSVM, config: &Pubkey) -> spotboard::state::Config {
+    let account = svm.get_account(config).unwrap();
+    let mut data: &[u8] = &account.data;
+    spotboard::state::Config::try_deserialize(&mut data).unwrap()
 }
 
 pub fn token_balance(svm: &LiteSVM, account: &Pubkey) -> u64 {

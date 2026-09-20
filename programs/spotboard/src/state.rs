@@ -4,6 +4,16 @@ use crate::constants::METADATA_URI_MAX_LEN;
 
 #[account]
 #[derive(InitSpace)]
+pub struct Config {
+    pub authority: Pubkey,
+    pub payment_mint: Pubkey,
+    pub treasury: Pubkey,
+    pub fee_bps: u16,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
 pub struct Listing {
     pub seller: Pubkey,
     /// First 16 bytes of sha256(slug).

@@ -18,6 +18,18 @@ declare_id!("6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW");
 pub mod spotboard {
     use super::*;
 
+    pub fn initialize_config(
+        ctx: Context<InitializeConfig>,
+        treasury: Pubkey,
+        fee_bps: u16,
+    ) -> Result<()> {
+        instructions::initialize_config::handle_initialize_config(ctx, treasury, fee_bps)
+    }
+
+    pub fn update_config(ctx: Context<UpdateConfig>, treasury: Pubkey, fee_bps: u16) -> Result<()> {
+        instructions::update_config::handle_update_config(ctx, treasury, fee_bps)
+    }
+
     pub fn close_spot(ctx: Context<CloseSpot>) -> Result<()> {
         instructions::close_spot::handle_close_spot(ctx)
     }

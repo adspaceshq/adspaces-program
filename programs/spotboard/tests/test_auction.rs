@@ -36,8 +36,8 @@ fn create_auction_listing(
         spotboard::accounts::CreateListing {
             seller: seller.pubkey(),
             listing,
+            config: env.config,
             usdc_mint: env.usdc,
-            treasury: Keypair::new().pubkey(),
             system_program: system_program::ID,
         }
         .to_account_metas(None),

@@ -14,6 +14,8 @@ pub enum SpotboardError {
     MetadataUriTooLong,
     #[msg("Mint is not a known USDC mint (devnet or mainnet-beta).")]
     InvalidMint,
+    #[msg("Fee must be at most 10,000 basis points.")]
+    InvalidFeeBps,
     #[msg("Listing is past its deadline.")]
     ListingClosed,
     #[msg("Listing is not open.")]

@@ -1,6 +1,20 @@
 use anchor_lang::prelude::*;
 
 #[event]
+pub struct ConfigInitialized {
+    pub authority: Pubkey,
+    pub payment_mint: Pubkey,
+    pub treasury: Pubkey,
+    pub fee_bps: u16,
+}
+
+#[event]
+pub struct ConfigUpdated {
+    pub treasury: Pubkey,
+    pub fee_bps: u16,
+}
+
+#[event]
 pub struct ListingCreated {
     pub listing: Pubkey,
     pub seller: Pubkey,

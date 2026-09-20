@@ -16,7 +16,6 @@ const FEE_BPS: u128 = 250;
 fn create_fixed_listing(
     env: &mut Env,
     seller: &Keypair,
-    treasury: &Pubkey,
     slug_hash: [u8; 16],
     deadline: i64,
 ) -> Pubkey {
@@ -36,8 +35,8 @@ fn create_fixed_listing(
         spotboard::accounts::CreateListing {
             seller: seller.pubkey(),
             listing,
+            config: env.config,
             usdc_mint: env.usdc,
-            treasury: *treasury,
             system_program: system_program::ID,
         }
         .to_account_metas(None),
@@ -148,23 +147,16 @@ fn withdraw_before_deadline_fails() {
     let mut env = Env::new();
     let seller = Keypair::new();
     env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
-    let treasury = Keypair::new();
-
     let now = env.clock().unix_timestamp;
-    let listing = create_fixed_listing(
-        &mut env,
-        &seller,
-        &treasury.pubkey(),
-        [20u8; 16],
-        now + 30 * 86_400,
-    );
+    let listing = create_fixed_listing(&mut env, &seller, [20u8; 16], now + 30 * 86_400);
     let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
 
     let (buyer, buyer_ata) = env.new_user(1_000_000_000);
     claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
 
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
-    let treasury_ata = empty_token_account(&mut env, &seller, &treasury.pubkey());
+    let treasury = env.treasury;
+    let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
     assert!(withdraw(
         &mut env,
         &seller,
@@ -183,16 +175,8 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
     let mut env = Env::new();
     let seller = Keypair::new();
     env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
-    let treasury = Keypair::new();
-
     let now = env.clock().unix_timestamp;
-    let listing = create_fixed_listing(
-        &mut env,
-        &seller,
-        &treasury.pubkey(),
-        [21u8; 16],
-        now + 30 * 86_400,
-    );
+    let listing = create_fixed_listing(&mut env, &seller, [21u8; 16], now + 30 * 86_400);
     let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
 
     let (buyer, buyer_ata) = env.new_user(1_000_000_000);
@@ -201,7 +185,8 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
     env.warp_to_timestamp(now + 31 * 86_400);
 
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
-    let treasury_ata = empty_token_account(&mut env, &seller, &treasury.pubkey());
+    let treasury = env.treasury;
+    let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
     withdraw(
         &mut env,
         &seller,
@@ -231,16 +216,8 @@ fn close_spot_reclaims_unfunded_vault() {
     let mut env = Env::new();
     let seller = Keypair::new();
     env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
-    let treasury = Keypair::new();
-
     let now = env.clock().unix_timestamp;
-    let listing = create_fixed_listing(
-        &mut env,
-        &seller,
-        &treasury.pubkey(),
-        [22u8; 16],
-        now + 30 * 86_400,
-    );
+    let listing = create_fixed_listing(&mut env, &seller, [22u8; 16], now + 30 * 86_400);
     let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
 
     let close = new_ix(
@@ -268,16 +245,8 @@ fn close_funded_spot_fails() {
     let mut env = Env::new();
     let seller = Keypair::new();
     env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
-    let treasury = Keypair::new();
-
     let now = env.clock().unix_timestamp;
-    let listing = create_fixed_listing(
-        &mut env,
-        &seller,
-        &treasury.pubkey(),
-        [23u8; 16],
-        now + 30 * 86_400,
-    );
+    let listing = create_fixed_listing(&mut env, &seller, [23u8; 16], now + 30 * 86_400);
     let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
 
     let (buyer, buyer_ata) = env.new_user(1_000_000_000);

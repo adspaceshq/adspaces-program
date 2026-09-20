@@ -1,7 +1,12 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::Mint;
 
-use crate::{constants::*, error::SpotboardError, events::ListingCreated, state::Listing};
+use crate::{
+    constants::*,
+    error::SpotboardError,
+    events::ListingCreated,
+    state::{Config, Listing},
+};
 
 #[derive(Accounts)]
 #[instruction(slug_hash: [u8; 16])]
@@ -16,10 +21,12 @@ pub struct CreateListing<'info> {
         bump
     )]
     pub listing: Account<'info, Listing>,
-    /// USDC mint. Must be devnet test USDC or mainnet USDC (checked in handler).
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
+    #[account(
+        constraint = usdc_mint.key() == config.payment_mint @ SpotboardError::InvalidMint
+    )]
     pub usdc_mint: Account<'info, Mint>,
-    /// CHECK: only the pubkey is stored; it must not be the default pubkey.
-    pub treasury: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -54,28 +61,11 @@ pub fn handle_create_listing(
         require!(min_increment > 0, SpotboardError::InvalidMinIncrement);
     }
 
-    let mint_key = ctx.accounts.usdc_mint.key();
-    let devnet: Pubkey = USDC_MINT_DEVNET
-        .parse()
-        .map_err(|_| SpotboardError::InvalidMint)?;
-    let mainnet: Pubkey = USDC_MINT_MAINNET
-        .parse()
-        .map_err(|_| SpotboardError::InvalidMint)?;
-    require!(
-        mint_key == devnet || mint_key == mainnet,
-        SpotboardError::InvalidMint
-    );
-
-    require!(
-        ctx.accounts.treasury.key() != Pubkey::default(),
-        SpotboardError::Unauthorized
-    );
-
     let listing = &mut ctx.accounts.listing;
     listing.seller = ctx.accounts.seller.key();
     listing.slug_hash = slug_hash;
     listing.metadata_uri = metadata_uri;
-    listing.mint = mint_key;
+    listing.mint = ctx.accounts.usdc_mint.key();
     listing.mode = mode;
     listing.deadline = deadline;
     listing.artwork_close = artwork_close;
@@ -83,8 +73,8 @@ pub fn handle_create_listing(
     listing.double_up = double_up;
     listing.spot_count = 0;
     listing.status = LISTING_OPEN;
-    listing.treasury = ctx.accounts.treasury.key();
-    listing.fee_bps = PLATFORM_FEE_BPS;
+    listing.treasury = ctx.accounts.config.treasury;
+    listing.fee_bps = ctx.accounts.config.fee_bps;
     listing.bump = ctx.bumps.listing;
 
     emit!(ListingCreated {
