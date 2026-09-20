@@ -62,6 +62,7 @@ pub fn handle_add_spot(ctx: Context<AddSpot>, price: u64) -> Result<()> {
     spot.status = SPOT_OPEN;
     spot.current_bid = 0;
     spot.current_bidder = Pubkey::default();
+    spot.buyer = Pubkey::default();
     spot.vault = ctx.accounts.vault.key();
     spot.bump = ctx.bumps.spot;
     spot.vault_bump = ctx.bumps.vault;

@@ -42,6 +42,7 @@ pub struct Spot {
     pub status: u8,
     pub current_bid: u64,
     pub current_bidder: Pubkey,
+    pub buyer: Pubkey,
     pub vault: Pubkey,
     pub bump: u8,
     pub vault_bump: u8,

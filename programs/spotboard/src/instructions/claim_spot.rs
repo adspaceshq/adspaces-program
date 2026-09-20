@@ -67,6 +67,7 @@ pub fn handle_claim_spot(ctx: Context<ClaimSpot>) -> Result<()> {
 
     let spot = &mut ctx.accounts.spot;
     spot.status = SPOT_FUNDED;
+    spot.buyer = ctx.accounts.buyer.key();
 
     emit!(SpotClaimed {
         listing: ctx.accounts.listing.key(),
