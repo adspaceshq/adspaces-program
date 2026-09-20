@@ -12,6 +12,7 @@
     "@solana/spl-token": "^0.4.14",
     "@types/chai": "^4.3.20",
     "@types/mocha": "^10.0.10",
+    "@types/node": "^22.19.0",
     "chai": "^4.5.0",
     "ts-mocha": "^11.1.0",
     "typescript": "^5.9.3"

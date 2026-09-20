@@ -1,4 +1,4 @@
-skip_local_validator = true
+skip_local_validator = false
 
 [toolchain]
 
