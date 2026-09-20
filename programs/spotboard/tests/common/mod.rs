@@ -12,6 +12,7 @@ use spl_token::state;
 pub use anchor_lang::prelude::Pubkey;
 pub use anchor_lang::solana_program::program_pack::Pack;
 use litesvm::LiteSVM;
+use solana_account::Account;
 use solana_keypair::Keypair;
 use solana_message::{Message, VersionedMessage};
 use solana_signer::Signer;
@@ -76,27 +77,32 @@ impl Env {
         svm.add_program(program_id(), PROGRAM_BYTES).unwrap();
 
         let mint_authority = Keypair::new();
-        svm.airdrop(&mint_authority.pubkey(), 10_000_000_000).unwrap();
+        svm.airdrop(&mint_authority.pubkey(), 10_000_000_000)
+            .unwrap();
 
         let usdc = usdc_mint_address();
-        let create_mint = system_instruction::create_account(
-            &mint_authority.pubkey(),
-            &usdc,
-            RENT_FUNDING,
-            state::Mint::LEN as u64,
-            &token_program_id(),
-        );
-        send(&mut svm, &[create_mint], &mint_authority, &[]).unwrap();
-
-        let init_mint = spl_token::instruction::initialize_mint(
-            &token_program_id(),
-            &usdc,
-            &mint_authority.pubkey(),
-            None,
-            6,
+        let mint = state::Mint {
+            mint_authority: spl_token::solana_program::program_option::COption::Some(
+                mint_authority.pubkey(),
+            ),
+            supply: 0,
+            decimals: 6,
+            is_initialized: true,
+            freeze_authority: spl_token::solana_program::program_option::COption::None,
+        };
+        let mut mint_data = vec![0; state::Mint::LEN];
+        state::Mint::pack(mint, &mut mint_data).unwrap();
+        svm.set_account(
+            usdc,
+            Account {
+                lamports: RENT_FUNDING,
+                data: mint_data,
+                owner: token_program_id(),
+                executable: false,
+                rent_epoch: 0,
+            },
         )
         .unwrap();
-        send(&mut svm, &[init_mint], &mint_authority, &[]).unwrap();
 
         Self {
             svm,
