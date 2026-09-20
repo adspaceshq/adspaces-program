@@ -29,6 +29,8 @@ pub struct WithdrawSeller<'info> {
     #[account(
         mut,
         constraint = vault.key() == spot.vault @ SpotboardError::Unauthorized,
+        constraint = vault.mint == listing.mint @ SpotboardError::InvalidMint,
+        constraint = vault.owner == spot.key() @ SpotboardError::Unauthorized,
     )]
     pub vault: Account<'info, TokenAccount>,
     #[account(
