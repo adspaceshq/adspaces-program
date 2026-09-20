@@ -1,9 +1,9 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { createMint } from "@solana/spl-token";
 import { expect } from "chai";
 
 import { Spotboard } from "../target/types/spotboard";
+import { ensureConfig } from "./helpers/setup";
 
 describe("protocol config", () => {
   const provider = anchor.AnchorProvider.env();
@@ -11,38 +11,19 @@ describe("protocol config", () => {
 
   const program = anchor.workspace.spotboard as Program<Spotboard>;
   const wallet = provider.wallet as anchor.Wallet;
-  const treasury = anchor.web3.Keypair.generate();
-  const [config] = anchor.web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("config")],
-    program.programId,
-  );
+  let config: anchor.web3.PublicKey;
   let paymentMint: anchor.web3.PublicKey;
+  let treasury: anchor.web3.PublicKey;
 
   before(async () => {
-    paymentMint = await createMint(
-      provider.connection,
-      wallet.payer,
-      wallet.publicKey,
-      null,
-      6,
-    );
+    ({ config, paymentMint, treasury } = await ensureConfig(program, provider));
   });
 
   it("initializes the protocol config", async () => {
-    await program.methods
-      .initializeConfig(treasury.publicKey, 250)
-      .accountsStrict({
-        authority: wallet.publicKey,
-        config,
-        paymentMint,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .rpc();
-
     const stored = await program.account.config.fetch(config);
     expect(stored.authority.equals(wallet.publicKey)).to.equal(true);
     expect(stored.paymentMint.equals(paymentMint)).to.equal(true);
-    expect(stored.treasury.equals(treasury.publicKey)).to.equal(true);
+    expect(stored.treasury.equals(treasury)).to.equal(true);
     expect(stored.feeBps).to.equal(250);
   });
 
