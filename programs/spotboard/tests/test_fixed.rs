@@ -1,7 +1,7 @@
 mod common;
 
 use anchor_lang::{
-    solana_program::{instruction::Instruction, system_program, sysvar},
+    solana_program::{rent, system_program},
     InstructionData, ToAccountMetas,
 };
 use solana_keypair::Keypair;
@@ -14,7 +14,7 @@ const PRICE: u64 = 150_000_000; // 150 USDC
 fn create_fixed_listing(env: &mut Env, seller: &Keypair, slug_hash: [u8; 16]) -> Pubkey {
     let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
     let now = env.clock().unix_timestamp;
-    let ix = Instruction::new_with_bytes(
+    let ix = new_ix(
         program_id(),
         spotboard::instruction::CreateListing {
             slug_hash,
@@ -48,7 +48,7 @@ fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) ->
     let index = read_listing(&env.svm, listing).spot_count;
     let (spot, _) = spot_pda(listing, index);
     let (vault, _) = vault_pda(&spot);
-    let ix = Instruction::new_with_bytes(
+    let ix = new_ix(
         program_id(),
         spotboard::instruction::AddSpot { price }.data(),
         spotboard::accounts::AddSpot {
@@ -59,7 +59,7 @@ fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) ->
             usdc_mint: env.usdc,
             system_program: system_program::ID,
             token_program: token_program_id(),
-            rent: sysvar::rent::ID,
+            rent: rent::ID,
         }
         .to_account_metas(None),
     );
@@ -71,8 +71,15 @@ fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) ->
     (spot, vault)
 }
 
-fn claim(env: &mut Env, buyer: &Keypair, buyer_ata: &Pubkey, listing: &Pubkey, spot: &Pubkey, vault: &Pubkey) {
-    let ix = Instruction::new_with_bytes(
+fn claim(
+    env: &mut Env,
+    buyer: &Keypair,
+    buyer_ata: &Pubkey,
+    listing: &Pubkey,
+    spot: &Pubkey,
+    vault: &Pubkey,
+) {
+    let ix = new_ix(
         program_id(),
         spotboard::instruction::ClaimSpot {}.data(),
         spotboard::accounts::ClaimSpot {
@@ -122,7 +129,7 @@ fn fixed_claim_twice_fails() {
     claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
 
     let (buyer2, buyer2_ata) = env.new_user(1_000_000_000);
-    let ix = Instruction::new_with_bytes(
+    let ix = new_ix(
         program_id(),
         spotboard::instruction::ClaimSpot {}.data(),
         spotboard::accounts::ClaimSpot {
@@ -151,7 +158,7 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
     let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
 
     let (bidder, bidder_ata) = env.new_user(1_000_000_000);
-    let bid = Instruction::new_with_bytes(
+    let bid = new_ix(
         program_id(),
         spotboard::instruction::PlaceBid { amount: PRICE }.data(),
         spotboard::accounts::PlaceBid {
@@ -172,7 +179,7 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
     let now = env.clock().unix_timestamp;
     let slug_hash = [4u8; 16];
     let (auction_listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
-    let create = Instruction::new_with_bytes(
+    let create = new_ix(
         program_id(),
         spotboard::instruction::CreateListing {
             slug_hash,
@@ -196,7 +203,7 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
     send(&mut env.svm, &[create], &seller, &[]).unwrap();
     let (a_spot, a_vault) = add_spot_to(&mut env, &seller, &auction_listing, PRICE);
 
-    let claim_ix = Instruction::new_with_bytes(
+    let claim_ix = new_ix(
         program_id(),
         spotboard::instruction::ClaimSpot {}.data(),
         spotboard::accounts::ClaimSpot {
@@ -222,7 +229,7 @@ fn claim_after_deadline_fails() {
     let now = env.clock().unix_timestamp;
     let slug_hash = [5u8; 16];
     let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
-    let create = Instruction::new_with_bytes(
+    let create = new_ix(
         program_id(),
         spotboard::instruction::CreateListing {
             slug_hash,
@@ -249,7 +256,7 @@ fn claim_after_deadline_fails() {
     env.warp_to_timestamp(now + 1_000);
 
     let (buyer, buyer_ata) = env.new_user(1_000_000_000);
-    let claim_ix = Instruction::new_with_bytes(
+    let claim_ix = new_ix(
         program_id(),
         spotboard::instruction::ClaimSpot {}.data(),
         spotboard::accounts::ClaimSpot {

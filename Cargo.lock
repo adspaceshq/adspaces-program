@@ -4126,6 +4126,7 @@ dependencies = [
  "solana-signer",
  "solana-transaction",
  "spl-token",
+ "spl-token-interface",
 ]
 
 [[package]]

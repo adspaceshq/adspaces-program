@@ -6,8 +6,7 @@ use anchor_lang::{
     },
     AccountDeserialize,
 };
-#[allow(deprecated)]
-use spl_token::state;
+use spl_token_interface::state;
 
 pub use anchor_lang::prelude::Pubkey;
 pub use anchor_lang::solana_program::program_pack::Pack;
@@ -155,10 +154,12 @@ impl Env {
         self.svm.get_sysvar::<Clock>()
     }
 
+    #[allow(dead_code)]
     pub fn set_clock(&mut self, clock: &Clock) {
         self.svm.set_sysvar::<Clock>(clock);
     }
 
+    #[allow(dead_code)]
     pub fn warp_to_timestamp(&mut self, timestamp: i64) {
         let mut clock = self.clock();
         clock.unix_timestamp = timestamp;
@@ -171,6 +172,7 @@ pub fn new_ix(program_id: Pubkey, data: Vec<u8>, accounts: Vec<AccountMeta>) -> 
 }
 
 /// Builds, signs and sends one transaction with the latest blockhash.
+#[allow(clippy::result_large_err)]
 pub fn send(
     svm: &mut LiteSVM,
     ixs: &[Instruction],
@@ -185,6 +187,7 @@ pub fn send(
     svm.send_transaction(tx)
 }
 
+#[allow(dead_code)]
 pub fn read_listing(svm: &LiteSVM, listing: &Pubkey) -> spotboard::state::Listing {
     let account = svm.get_account(listing).unwrap();
     let mut data: &[u8] = &account.data;
