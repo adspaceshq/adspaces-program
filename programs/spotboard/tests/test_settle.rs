@@ -190,9 +190,11 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
     let treasury = env.treasury;
     let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
+    let caller = Keypair::new();
+    env.svm.airdrop(&caller.pubkey(), 10_000_000_000).unwrap();
     withdraw(
         &mut env,
-        &seller,
+        &caller,
         &seller.pubkey(),
         &listing,
         &spot,
