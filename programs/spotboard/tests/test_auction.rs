@@ -6,6 +6,7 @@ use anchor_lang::{
 };
 use solana_keypair::Keypair;
 use solana_signer::Signer;
+use spl_token_interface::state;
 
 use common::*;
 
@@ -70,6 +71,27 @@ fn spot_and_vault(listing: &Pubkey) -> (Pubkey, Pubkey) {
     let (spot, _) = spot_pda(listing, 0);
     let (vault, _) = vault_pda(&spot);
     (spot, vault)
+}
+
+fn empty_token_account(env: &mut Env, funder: &Keypair, owner: &Pubkey) -> Pubkey {
+    let account = Keypair::new();
+    let create = anchor_lang::solana_program::system_instruction::create_account(
+        &funder.pubkey(),
+        &account.pubkey(),
+        RENT_FUNDING,
+        state::Account::LEN as u64,
+        &token_program_id(),
+    );
+    send(&mut env.svm, &[create], funder, &[&account]).unwrap();
+    let init = spl_token::instruction::initialize_account(
+        &token_program_id(),
+        &account.pubkey(),
+        &env.usdc,
+        owner,
+    )
+    .unwrap();
+    send(&mut env.svm, &[init], funder, &[]).unwrap();
+    account.pubkey()
 }
 
 #[allow(clippy::result_large_err, clippy::too_many_arguments)]
@@ -251,4 +273,87 @@ fn takeover_without_refund_account_fails() {
     )
     .is_err());
     assert_eq!(token_balance(&env.svm, &vault), START);
+}
+
+#[test]
+fn only_final_bidder_can_dispute_and_receive_full_refund() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_auction_listing(&mut env, &seller, [13; 16], INCREMENT, false);
+    let (spot, vault) = spot_and_vault(&listing);
+    let (alice, alice_ata) = env.new_user(1_000_000_000);
+    let (bob, bob_ata) = env.new_user(1_000_000_000);
+    bid(
+        &mut env, &alice, &alice_ata, &listing, &spot, &vault, None, START,
+    )
+    .unwrap();
+    let winning_bid = START + INCREMENT;
+    bid(
+        &mut env,
+        &bob,
+        &bob_ata,
+        &listing,
+        &spot,
+        &vault,
+        Some(alice_ata),
+        winning_bid,
+    )
+    .unwrap();
+    assert_eq!(token_balance(&env.svm, &alice_ata), 1_000_000_000);
+
+    env.warp_to_timestamp(now + 37 * 86_400);
+    let dispute_ix = |buyer: Pubkey| {
+        new_ix(
+            program_id(),
+            spotboard::instruction::RaiseDispute {}.data(),
+            spotboard::accounts::RaiseDispute {
+                buyer,
+                listing,
+                spot,
+            }
+            .to_account_metas(None),
+        )
+    };
+    assert!(send(&mut env.svm, &[dispute_ix(alice.pubkey())], &alice, &[]).is_err());
+    send(&mut env.svm, &[dispute_ix(bob.pubkey())], &bob, &[]).unwrap();
+    assert_eq!(
+        read_spot(&env.svm, &spot).status,
+        spotboard::constants::SPOT_DISPUTED
+    );
+
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
+    let treasury = env.treasury;
+    let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
+    let resolve = new_ix(
+        program_id(),
+        spotboard::instruction::ResolveDispute {
+            seller_share_bps: 0,
+        }
+        .data(),
+        spotboard::accounts::ResolveDispute {
+            resolver: env.mint_authority.pubkey(),
+            config: env.config,
+            listing,
+            spot,
+            vault,
+            seller_ata,
+            seller: seller.pubkey(),
+            buyer_ata: bob_ata,
+            treasury_ata,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[resolve], &env.mint_authority, &[]).unwrap();
+    assert_eq!(token_balance(&env.svm, &bob_ata), 1_000_000_000);
+    assert_eq!(token_balance(&env.svm, &seller_ata), 0);
+    assert_eq!(token_balance(&env.svm, &treasury_ata), 0);
+    assert_eq!(
+        read_spot(&env.svm, &spot).status,
+        spotboard::constants::SPOT_FINALIZED
+    );
+    assert!(env.svm.get_account(&vault).is_none());
 }
