@@ -391,6 +391,40 @@ fn only_winner_can_dispute_and_block_payout() {
         spotboard::constants::SPOT_DISPUTED
     );
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
+
+    let resolver = env.mint_authority.pubkey();
+    let resolve = new_ix(
+        program_id(),
+        spotboard::instruction::ResolveDispute {
+            seller_share_bps: 5_000,
+        }
+        .data(),
+        spotboard::accounts::ResolveDispute {
+            resolver,
+            config: env.config,
+            listing,
+            spot,
+            vault,
+            seller_ata,
+            seller: seller.pubkey(),
+            buyer_ata,
+            treasury_ata,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    );
+    let mut unauthorized = resolve.clone();
+    unauthorized.accounts[0].pubkey = stranger.pubkey();
+    assert!(send(&mut env.svm, &[unauthorized], &stranger, &[]).is_err());
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+    send(&mut env.svm, &[resolve], &env.mint_authority, &[]).unwrap();
+    let half = PRICE / 2;
+    let fee = half as u128 * FEE_BPS / 10_000;
+    assert_eq!(token_balance(&env.svm, &buyer_ata), half);
+    assert_eq!(token_balance(&env.svm, &seller_ata), half - fee as u64);
+    assert_eq!(token_balance(&env.svm, &treasury_ata), fee as u64);
+    assert!(env.svm.get_account(&vault).is_none());
 }
 
 #[test]

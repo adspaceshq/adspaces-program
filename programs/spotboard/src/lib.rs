@@ -46,6 +46,10 @@ pub mod spotboard {
         instructions::raise_dispute::handle_raise_dispute(ctx)
     }
 
+    pub fn resolve_dispute(ctx: Context<ResolveDispute>, seller_share_bps: u16) -> Result<()> {
+        instructions::resolve_dispute::handle_resolve_dispute(ctx, seller_share_bps)
+    }
+
     pub fn place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
         instructions::place_bid::handle_place_bid(ctx, amount)
     }
