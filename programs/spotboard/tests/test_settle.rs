@@ -424,6 +424,102 @@ fn seller_cancels_funded_spot_with_full_buyer_refund() {
 }
 
 #[test]
+fn anyone_can_refund_missing_proof_after_delivery_deadline() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [29; 16], now + 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+    let (caller, wrong_ata) = env.new_user(0);
+
+    env.warp_to_timestamp(now + 8 * 86_400 - 1);
+    assert!(refund(
+        &mut env,
+        &caller,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &buyer_ata
+    )
+    .is_err());
+    env.svm.expire_blockhash();
+    env.warp_to_timestamp(now + 8 * 86_400);
+    assert!(refund(
+        &mut env,
+        &caller,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &wrong_ata
+    )
+    .is_err());
+    let meta = refund(
+        &mut env,
+        &caller,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &buyer_ata,
+    )
+    .unwrap();
+    assert_event(
+        &meta,
+        &spotboard::events::SpotRefunded {
+            listing,
+            index: 0,
+            buyer: buyer.pubkey(),
+            amount: PRICE,
+            seller_initiated: false,
+        },
+    );
+    assert_eq!(token_balance(&env.svm, &buyer_ata), PRICE);
+    assert_eq!(token_balance(&env.svm, &wrong_ata), 0);
+    assert_eq!(
+        read_spot(&env.svm, &spot).status,
+        spotboard::constants::SPOT_CANCELLED
+    );
+    assert!(env.svm.get_account(&vault).is_none());
+}
+
+#[test]
+fn third_party_cannot_refund_when_proof_exists() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [30; 16], now + 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+    env.warp_to_timestamp(now + 86_400);
+    submit_proof(&mut env, &seller, &listing, &spot);
+    env.warp_to_timestamp(now + 8 * 86_400);
+    let caller = Keypair::new();
+    env.svm.airdrop(&caller.pubkey(), 10_000_000_000).unwrap();
+    assert!(refund(
+        &mut env,
+        &caller,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &buyer_ata
+    )
+    .is_err());
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+    assert_eq!(
+        read_spot(&env.svm, &spot).status,
+        spotboard::constants::SPOT_FUNDED
+    );
+}
+
+#[test]
 fn proof_and_review_are_required_before_payout() {
     let mut env = Env::new();
     let seller = Keypair::new();

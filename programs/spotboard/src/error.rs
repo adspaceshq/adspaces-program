@@ -66,4 +66,6 @@ pub enum SpotboardError {
     ProofDeadlinePassed,
     #[msg("Delivery deadline has not passed yet.")]
     DeliveryDeadlinePending,
+    #[msg("Proof exists; refund requires dispute resolution or seller cancellation.")]
+    ProofExists,
 }

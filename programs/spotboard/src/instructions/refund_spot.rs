@@ -45,10 +45,17 @@ pub struct RefundSpot<'info> {
 }
 
 pub fn handle_refund_spot(ctx: Context<RefundSpot>) -> Result<()> {
-    require!(
-        ctx.accounts.caller.key() == ctx.accounts.listing.seller,
-        SpotboardError::Unauthorized
-    );
+    let seller_initiated = ctx.accounts.caller.key() == ctx.accounts.listing.seller;
+    if !seller_initiated {
+        require!(
+            Clock::get()?.unix_timestamp >= ctx.accounts.listing.delivery_deadline,
+            SpotboardError::DeliveryDeadlinePending
+        );
+        require!(
+            ctx.accounts.spot.proof_submitted_at == 0,
+            SpotboardError::ProofExists
+        );
+    }
     let amount = ctx.accounts.vault.amount;
     require!(amount > 0, SpotboardError::SpotNotFunded);
     let listing_key = ctx.accounts.listing.key();
@@ -83,7 +90,7 @@ pub fn handle_refund_spot(ctx: Context<RefundSpot>) -> Result<()> {
         index,
         buyer: ctx.accounts.buyer_ata.owner,
         amount,
-        seller_initiated: true,
+        seller_initiated,
     });
     Ok(())
 }
