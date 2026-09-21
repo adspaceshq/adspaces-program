@@ -29,6 +29,7 @@ fn create_auction_listing(
             mode: spotboard::constants::MODE_AUCTION,
             deadline: now + 30 * 86_400,
             artwork_close: now + 30 * 86_400,
+            delivery_deadline: now + 37 * 86_400,
             min_increment,
             double_up,
         }

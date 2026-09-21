@@ -84,6 +84,7 @@ describe("auction spots", () => {
         1,
         new anchor.BN(now + 3600),
         new anchor.BN(now + 7200),
+        new anchor.BN(now + 86400),
         increment,
         false,
       )
@@ -234,6 +235,7 @@ describe("auction spots", () => {
         1,
         new anchor.BN(now + 3600),
         new anchor.BN(now + 7200),
+        new anchor.BN(now + 86400),
         new anchor.BN(0),
         true,
       )

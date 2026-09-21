@@ -8,6 +8,8 @@ pub enum SpotboardError {
     InvalidDeadline,
     #[msg("Artwork close must not be before the deadline.")]
     InvalidArtworkClose,
+    #[msg("Delivery deadline must be after artwork close.")]
+    InvalidDeliveryDeadline,
     #[msg("Auction without double-up needs a minimum increment above zero.")]
     InvalidMinIncrement,
     #[msg("Metadata URI is too long.")]

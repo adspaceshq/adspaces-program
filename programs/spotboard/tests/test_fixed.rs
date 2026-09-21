@@ -22,6 +22,7 @@ fn create_fixed_listing(env: &mut Env, seller: &Keypair, slug_hash: [u8; 16]) ->
             mode: spotboard::constants::MODE_FIXED,
             deadline: now + 30 * 86_400,
             artwork_close: now + 30 * 86_400,
+            delivery_deadline: now + 37 * 86_400,
             min_increment: 0,
             double_up: false,
         }
@@ -41,7 +42,42 @@ fn create_fixed_listing(env: &mut Env, seller: &Keypair, slug_hash: [u8; 16]) ->
     assert_eq!(stored.seller, seller.pubkey());
     assert_eq!(stored.mode, spotboard::constants::MODE_FIXED);
     assert_eq!(stored.spot_count, 0);
+    assert_eq!(stored.delivery_deadline, now + 37 * 86_400);
     listing
+}
+
+#[test]
+fn delivery_deadline_must_follow_artwork_close() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let slug_hash = [31; 16];
+    let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
+    let ix = new_ix(
+        program_id(),
+        spotboard::instruction::CreateListing {
+            slug_hash,
+            metadata_uri: "https://spotboard.test/listings/invalid-delivery".to_string(),
+            mode: spotboard::constants::MODE_FIXED,
+            deadline: now + 86_400,
+            artwork_close: now + 2 * 86_400,
+            delivery_deadline: now + 2 * 86_400,
+            min_increment: 0,
+            double_up: false,
+        }
+        .data(),
+        spotboard::accounts::CreateListing {
+            seller: seller.pubkey(),
+            listing,
+            config: env.config,
+            usdc_mint: env.usdc,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    assert!(send(&mut env.svm, &[ix], &seller, &[]).is_err());
+    assert!(env.svm.get_account(&listing).is_none());
 }
 
 fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) -> (Pubkey, Pubkey) {
@@ -188,6 +224,7 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
             mode: spotboard::constants::MODE_AUCTION,
             deadline: now + 30 * 86_400,
             artwork_close: now + 30 * 86_400,
+            delivery_deadline: now + 37 * 86_400,
             min_increment: 10_000_000,
             double_up: false,
         }
@@ -238,6 +275,7 @@ fn claim_after_deadline_fails() {
             mode: spotboard::constants::MODE_FIXED,
             deadline: now + 10,
             artwork_close: now + 10,
+            delivery_deadline: now + 20,
             min_increment: 0,
             double_up: false,
         }

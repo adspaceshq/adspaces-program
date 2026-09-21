@@ -70,6 +70,7 @@ pub mod spotboard {
         mode: u8,
         deadline: i64,
         artwork_close: i64,
+        delivery_deadline: i64,
         min_increment: u64,
         double_up: bool,
     ) -> Result<()> {
@@ -80,6 +81,7 @@ pub mod spotboard {
             mode,
             deadline,
             artwork_close,
+            delivery_deadline,
             min_increment,
             double_up,
         )

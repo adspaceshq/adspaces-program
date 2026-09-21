@@ -28,6 +28,7 @@ fn create_fixed_listing(
             mode: spotboard::constants::MODE_FIXED,
             deadline,
             artwork_close: deadline,
+            delivery_deadline: deadline + 7 * 86_400,
             min_increment: 0,
             double_up: false,
         }
