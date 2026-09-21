@@ -46,6 +46,11 @@ pub fn handle_raise_dispute(ctx: Context<RaiseDispute>) -> Result<()> {
             .checked_add(REVIEW_WINDOW_SECONDS)
             .ok_or(SpotboardError::MathOverflow)?;
         require!(now < review_end, SpotboardError::ReviewWindowClosed);
+    } else {
+        require!(
+            now >= ctx.accounts.listing.delivery_deadline,
+            SpotboardError::DeliveryDeadlinePending
+        );
     }
     spot.status = SPOT_DISPUTED;
     Ok(())

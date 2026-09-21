@@ -62,4 +62,8 @@ pub enum SpotboardError {
     ReviewWindowClosed,
     #[msg("Only the winning buyer can dispute this spot.")]
     NotWinningBuyer,
+    #[msg("Delivery deadline has passed; proof can no longer be submitted.")]
+    ProofDeadlinePassed,
+    #[msg("Delivery deadline has not passed yet.")]
+    DeliveryDeadlinePending,
 }

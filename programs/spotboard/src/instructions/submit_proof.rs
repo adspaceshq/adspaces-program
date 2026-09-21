@@ -31,6 +31,10 @@ pub fn handle_submit_proof(ctx: Context<SubmitProof>, proof_hash: [u8; 32]) -> R
         now >= ctx.accounts.listing.deadline,
         SpotboardError::WithdrawTooEarly
     );
+    require!(
+        now < ctx.accounts.listing.delivery_deadline,
+        SpotboardError::ProofDeadlinePassed
+    );
     require!(proof_hash != [0; 32], SpotboardError::InvalidProof);
     let spot = &mut ctx.accounts.spot;
     require!(
