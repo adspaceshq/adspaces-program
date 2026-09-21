@@ -235,7 +235,7 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
 
     env.warp_to_timestamp(now + 31 * 86_400);
     submit_proof(&mut env, &seller, &listing, &spot);
-    env.warp_to_timestamp(now + 31 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
+    env.warp_to_timestamp(now + 37 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
 
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
     let treasury = env.treasury;
@@ -352,6 +352,7 @@ fn proof_and_review_are_required_before_payout() {
     submit_proof(&mut env, &seller, &listing, &spot);
     let caller = Keypair::new();
     env.svm.airdrop(&caller.pubkey(), 10_000_000_000).unwrap();
+    env.warp_to_timestamp(now + 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
     assert!(withdraw(
         &mut env,
         &caller,
@@ -363,6 +364,24 @@ fn proof_and_review_are_required_before_payout() {
         &treasury_ata
     )
     .is_err());
+    let later_caller = Keypair::new();
+    env.svm
+        .airdrop(&later_caller.pubkey(), 10_000_000_000)
+        .unwrap();
+    env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS - 1);
+    assert!(withdraw(
+        &mut env,
+        &later_caller,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &seller_ata,
+        &treasury_ata
+    )
+    .is_err());
+    env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
+    assert!(dispute(&mut env, &buyer, &listing, &spot).is_err());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 }
 
@@ -378,11 +397,14 @@ fn only_winner_can_dispute_and_block_payout() {
     claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
     env.warp_to_timestamp(now + 86_400);
     submit_proof(&mut env, &seller, &listing, &spot);
+    assert!(dispute(&mut env, &buyer, &listing, &spot).is_err());
+    env.svm.expire_blockhash();
     let stranger = Keypair::new();
     env.svm.airdrop(&stranger.pubkey(), 10_000_000_000).unwrap();
     assert!(dispute(&mut env, &stranger, &listing, &spot).is_err());
+    env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS / 2);
     dispute(&mut env, &buyer, &listing, &spot).unwrap();
-    env.warp_to_timestamp(now + 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
+    env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
     let treasury = env.treasury;
     let treasury_ata = empty_token_account(&mut env, &seller, &treasury);

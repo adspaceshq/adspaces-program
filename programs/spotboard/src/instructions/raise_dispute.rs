@@ -37,20 +37,17 @@ pub fn handle_raise_dispute(ctx: Context<RaiseDispute>) -> Result<()> {
     );
     let now = Clock::get()?.unix_timestamp;
     require!(
-        now >= ctx.accounts.listing.deadline,
-        SpotboardError::WithdrawTooEarly
+        now >= ctx.accounts.listing.delivery_deadline,
+        SpotboardError::DeliveryDeadlinePending
     );
     if spot.proof_submitted_at > 0 {
-        let review_end = spot
-            .proof_submitted_at
+        let review_end = ctx
+            .accounts
+            .listing
+            .delivery_deadline
             .checked_add(REVIEW_WINDOW_SECONDS)
             .ok_or(SpotboardError::MathOverflow)?;
         require!(now < review_end, SpotboardError::ReviewWindowClosed);
-    } else {
-        require!(
-            now >= ctx.accounts.listing.delivery_deadline,
-            SpotboardError::DeliveryDeadlinePending
-        );
     }
     spot.status = SPOT_DISPUTED;
     Ok(())

@@ -64,8 +64,8 @@ pub fn handle_withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
     );
     let review_end = ctx
         .accounts
-        .spot
-        .proof_submitted_at
+        .listing
+        .delivery_deadline
         .checked_add(REVIEW_WINDOW_SECONDS)
         .ok_or(SpotboardError::MathOverflow)?;
     require!(now >= review_end, SpotboardError::ReviewWindowOpen);
