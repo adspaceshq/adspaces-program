@@ -46,4 +46,6 @@ pub struct Spot {
     pub vault: Pubkey,
     pub bump: u8,
     pub vault_bump: u8,
+    pub proof_hash: [u8; 32],
+    pub proof_submitted_at: i64,
 }

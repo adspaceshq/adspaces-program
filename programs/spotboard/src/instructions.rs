@@ -4,6 +4,7 @@ pub mod close_spot;
 pub mod create_listing;
 pub mod initialize_config;
 pub mod place_bid;
+pub mod submit_proof;
 pub mod update_config;
 pub mod withdraw_seller;
 
@@ -13,5 +14,6 @@ pub use close_spot::*;
 pub use create_listing::*;
 pub use initialize_config::*;
 pub use place_bid::*;
+pub use submit_proof::*;
 pub use update_config::*;
 pub use withdraw_seller::*;

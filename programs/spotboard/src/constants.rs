@@ -47,3 +47,6 @@ pub const SPOT_FINALIZED: u8 = 2;
 
 #[constant]
 pub const SPOT_CANCELLED: u8 = 3;
+
+#[constant]
+pub const REVIEW_WINDOW_SECONDS: i64 = 48 * 60 * 60;

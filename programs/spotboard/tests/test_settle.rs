@@ -144,6 +144,23 @@ fn withdraw(
     send(&mut env.svm, &[ix], caller, &[])
 }
 
+fn submit_proof(env: &mut Env, seller: &Keypair, listing: &Pubkey, spot: &Pubkey) {
+    let ix = new_ix(
+        program_id(),
+        spotboard::instruction::SubmitProof {
+            proof_hash: [7; 32],
+        }
+        .data(),
+        spotboard::accounts::SubmitProof {
+            seller: seller.pubkey(),
+            listing: *listing,
+            spot: *spot,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[ix], seller, &[]).unwrap();
+}
+
 #[test]
 fn withdraw_before_deadline_fails() {
     let mut env = Env::new();
@@ -186,6 +203,8 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
     claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
 
     env.warp_to_timestamp(now + 31 * 86_400);
+    submit_proof(&mut env, &seller, &listing, &spot);
+    env.warp_to_timestamp(now + 31 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
 
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
     let treasury = env.treasury;
@@ -271,5 +290,47 @@ fn close_funded_spot_fails() {
         .to_account_metas(None),
     );
     assert!(send(&mut env.svm, &[close], &seller, &[]).is_err());
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+}
+
+#[test]
+fn proof_and_review_are_required_before_payout() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [24; 16], now + 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
+    let treasury = env.treasury;
+    let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
+    env.warp_to_timestamp(now + 86_400);
+    assert!(withdraw(
+        &mut env,
+        &seller,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &seller_ata,
+        &treasury_ata
+    )
+    .is_err());
+    submit_proof(&mut env, &seller, &listing, &spot);
+    let caller = Keypair::new();
+    env.svm.airdrop(&caller.pubkey(), 10_000_000_000).unwrap();
+    assert!(withdraw(
+        &mut env,
+        &caller,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &seller_ata,
+        &treasury_ata
+    )
+    .is_err());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 }

@@ -48,4 +48,12 @@ pub enum SpotboardError {
     MissingRefundAccount,
     #[msg("Arithmetic overflow.")]
     MathOverflow,
+    #[msg("Proof is required before settlement.")]
+    ProofRequired,
+    #[msg("Proof was already submitted.")]
+    ProofAlreadySubmitted,
+    #[msg("Proof hash cannot be empty.")]
+    InvalidProof,
+    #[msg("Buyer review period is still open.")]
+    ReviewWindowOpen,
 }

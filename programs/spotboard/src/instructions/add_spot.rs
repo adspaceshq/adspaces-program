@@ -71,6 +71,8 @@ pub fn handle_add_spot(ctx: Context<AddSpot>, price: u64) -> Result<()> {
     spot.vault = ctx.accounts.vault.key();
     spot.bump = ctx.bumps.spot;
     spot.vault_bump = ctx.bumps.vault;
+    spot.proof_hash = [0; 32];
+    spot.proof_submitted_at = 0;
 
     listing.spot_count = index.checked_add(1).ok_or(SpotboardError::MathOverflow)?;
 

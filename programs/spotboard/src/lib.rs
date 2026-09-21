@@ -38,6 +38,10 @@ pub mod spotboard {
         instructions::withdraw_seller::handle_withdraw_seller(ctx)
     }
 
+    pub fn submit_proof(ctx: Context<SubmitProof>, proof_hash: [u8; 32]) -> Result<()> {
+        instructions::submit_proof::handle_submit_proof(ctx, proof_hash)
+    }
+
     pub fn place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
         instructions::place_bid::handle_place_bid(ctx, amount)
     }

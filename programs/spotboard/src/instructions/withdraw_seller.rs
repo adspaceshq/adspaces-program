@@ -58,6 +58,17 @@ pub fn handle_withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
         now >= ctx.accounts.listing.deadline,
         SpotboardError::WithdrawTooEarly
     );
+    require!(
+        ctx.accounts.spot.proof_submitted_at > 0,
+        SpotboardError::ProofRequired
+    );
+    let review_end = ctx
+        .accounts
+        .spot
+        .proof_submitted_at
+        .checked_add(REVIEW_WINDOW_SECONDS)
+        .ok_or(SpotboardError::MathOverflow)?;
+    require!(now >= review_end, SpotboardError::ReviewWindowOpen);
 
     let balance = ctx.accounts.vault.amount;
     require!(balance > 0, SpotboardError::SpotNotFunded);
