@@ -154,6 +154,34 @@ fn withdraw(
     send(&mut env.svm, &[ix], caller, &[])
 }
 
+#[allow(clippy::result_large_err, clippy::too_many_arguments)]
+fn refund(
+    env: &mut Env,
+    caller: &Keypair,
+    seller: &Pubkey,
+    listing: &Pubkey,
+    spot: &Pubkey,
+    vault: &Pubkey,
+    buyer_ata: &Pubkey,
+) -> litesvm::types::TransactionResult {
+    let ix = new_ix(
+        program_id(),
+        spotboard::instruction::RefundSpot {}.data(),
+        spotboard::accounts::RefundSpot {
+            caller: caller.pubkey(),
+            listing: *listing,
+            seller: *seller,
+            spot: *spot,
+            vault: *vault,
+            buyer_ata: *buyer_ata,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[ix], caller, &[])
+}
+
 #[allow(clippy::result_large_err)]
 fn try_submit_proof(
     env: &mut Env,
@@ -341,6 +369,58 @@ fn close_funded_spot_fails() {
     );
     assert!(send(&mut env.svm, &[close], &seller, &[]).is_err());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
+}
+
+#[test]
+fn seller_cancels_funded_spot_with_full_buyer_refund() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [28; 16], now + 30 * 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+    let stranger = Keypair::new();
+    env.svm.airdrop(&stranger.pubkey(), 10_000_000_000).unwrap();
+    assert!(refund(
+        &mut env,
+        &stranger,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &buyer_ata
+    )
+    .is_err());
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+
+    let meta = refund(
+        &mut env,
+        &seller,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &buyer_ata,
+    )
+    .unwrap();
+    assert_event(
+        &meta,
+        &spotboard::events::SpotRefunded {
+            listing,
+            index: 0,
+            buyer: buyer.pubkey(),
+            amount: PRICE,
+            seller_initiated: true,
+        },
+    );
+    assert_eq!(token_balance(&env.svm, &buyer_ata), PRICE);
+    assert_eq!(
+        read_spot(&env.svm, &spot).status,
+        spotboard::constants::SPOT_CANCELLED
+    );
+    assert!(env.svm.get_account(&vault).is_none());
 }
 
 #[test]

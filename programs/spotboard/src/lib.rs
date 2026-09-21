@@ -46,6 +46,10 @@ pub mod spotboard {
         instructions::raise_dispute::handle_raise_dispute(ctx)
     }
 
+    pub fn refund_spot(ctx: Context<RefundSpot>) -> Result<()> {
+        instructions::refund_spot::handle_refund_spot(ctx)
+    }
+
     pub fn resolve_dispute(ctx: Context<ResolveDispute>, seller_share_bps: u16) -> Result<()> {
         instructions::resolve_dispute::handle_resolve_dispute(ctx, seller_share_bps)
     }

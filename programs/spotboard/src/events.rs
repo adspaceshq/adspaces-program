@@ -96,3 +96,12 @@ pub struct DisputeResolved {
     pub seller_amount: u64,
     pub fee: u64,
 }
+
+#[event]
+pub struct SpotRefunded {
+    pub listing: Pubkey,
+    pub index: u8,
+    pub buyer: Pubkey,
+    pub amount: u64,
+    pub seller_initiated: bool,
+}
