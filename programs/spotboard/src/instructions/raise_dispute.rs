@@ -3,6 +3,7 @@ use anchor_lang::prelude::*;
 use crate::{
     constants::*,
     error::SpotboardError,
+    events::DisputeRaised,
     state::{Listing, Spot},
 };
 
@@ -49,6 +50,14 @@ pub fn handle_raise_dispute(ctx: Context<RaiseDispute>) -> Result<()> {
             .ok_or(SpotboardError::MathOverflow)?;
         require!(now < review_end, SpotboardError::ReviewWindowClosed);
     }
+    let proof_submitted = spot.proof_submitted_at > 0;
     spot.status = SPOT_DISPUTED;
+    emit!(DisputeRaised {
+        listing: ctx.accounts.listing.key(),
+        index: spot.index,
+        buyer: ctx.accounts.buyer.key(),
+        proof_submitted,
+        raised_at: now,
+    });
     Ok(())
 }

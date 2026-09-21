@@ -2,8 +2,9 @@ mod common;
 
 use anchor_lang::{
     solana_program::{rent, system_program},
-    InstructionData, ToAccountMetas,
+    Event, InstructionData, ToAccountMetas,
 };
+use base64::Engine;
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 use spl_token_interface::state;
@@ -12,6 +13,14 @@ use common::*;
 
 const PRICE: u64 = 150_000_000; // 150 USDC
 const FEE_BPS: u128 = 250;
+
+fn assert_event<E: Event>(meta: &litesvm::types::TransactionMetadata, event: &E) {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(event.data());
+    assert!(meta
+        .logs
+        .iter()
+        .any(|log| log == &format!("Program data: {encoded}")));
+}
 
 fn create_fixed_listing(
     env: &mut Env,
@@ -234,7 +243,17 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
     claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
 
     env.warp_to_timestamp(now + 31 * 86_400);
-    submit_proof(&mut env, &seller, &listing, &spot);
+    let proof_meta = try_submit_proof(&mut env, &seller, &listing, &spot).unwrap();
+    assert_event(
+        &proof_meta,
+        &spotboard::events::ProofSubmitted {
+            listing,
+            index: 0,
+            seller: seller.pubkey(),
+            proof_hash: [7; 32],
+            submitted_at: read_spot(&env.svm, &spot).proof_submitted_at,
+        },
+    );
     env.warp_to_timestamp(now + 37 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
 
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
@@ -403,7 +422,17 @@ fn only_winner_can_dispute_and_block_payout() {
     env.svm.airdrop(&stranger.pubkey(), 10_000_000_000).unwrap();
     assert!(dispute(&mut env, &stranger, &listing, &spot).is_err());
     env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS / 2);
-    dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    let dispute_meta = dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    assert_event(
+        &dispute_meta,
+        &spotboard::events::DisputeRaised {
+            listing,
+            index: 0,
+            buyer: buyer.pubkey(),
+            proof_submitted: true,
+            raised_at: env.clock().unix_timestamp,
+        },
+    );
     env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
     let treasury = env.treasury;
@@ -451,9 +480,21 @@ fn only_winner_can_dispute_and_block_payout() {
     unauthorized.accounts[0].pubkey = stranger.pubkey();
     assert!(send(&mut env.svm, &[unauthorized], &stranger, &[]).is_err());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
-    send(&mut env.svm, &[resolve], &env.mint_authority, &[]).unwrap();
+    let resolve_meta = send(&mut env.svm, &[resolve], &env.mint_authority, &[]).unwrap();
     let half = PRICE / 2;
     let fee = half as u128 * FEE_BPS / 10_000;
+    assert_event(
+        &resolve_meta,
+        &spotboard::events::DisputeResolved {
+            listing,
+            index: 0,
+            resolver,
+            seller_share_bps: 5_000,
+            buyer_refund: half,
+            seller_amount: half - fee as u64,
+            fee: fee as u64,
+        },
+    );
     assert_eq!(token_balance(&env.svm, &buyer_ata), half);
     assert_eq!(token_balance(&env.svm, &seller_ata), half - fee as u64);
     assert_eq!(token_balance(&env.svm, &treasury_ata), fee as u64);
@@ -478,7 +519,17 @@ fn missing_proof_dispute_waits_for_delivery_deadline() {
     );
     env.svm.expire_blockhash();
     env.warp_to_timestamp(now + 8 * 86_400);
-    dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    let dispute_meta = dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    assert_event(
+        &dispute_meta,
+        &spotboard::events::DisputeRaised {
+            listing,
+            index: 0,
+            buyer: buyer.pubkey(),
+            proof_submitted: false,
+            raised_at: env.clock().unix_timestamp,
+        },
+    );
     assert_eq!(
         read_spot(&env.svm, &spot).status,
         spotboard::constants::SPOT_DISPUTED

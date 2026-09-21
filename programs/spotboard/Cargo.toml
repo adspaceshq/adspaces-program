@@ -24,6 +24,7 @@ anchor-lang = "1.1.2"
 anchor-spl = "1"
 
 [dev-dependencies]
+base64 = "0.22"
 litesvm = "0.10.0"
 solana-message = "3.0.1"
 solana-account = "3.4.0"

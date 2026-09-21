@@ -4,6 +4,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount};
 use crate::{
     constants::*,
     error::SpotboardError,
+    events::DisputeResolved,
     state::{Config, Listing, Spot},
 };
 
@@ -104,5 +105,14 @@ pub fn handle_resolve_dispute(ctx: Context<ResolveDispute>, seller_share_bps: u1
         signer_seeds,
     ))?;
     ctx.accounts.spot.status = SPOT_FINALIZED;
+    emit!(DisputeResolved {
+        listing: listing_key,
+        index,
+        resolver: ctx.accounts.resolver.key(),
+        seller_share_bps,
+        buyer_refund,
+        seller_amount: seller_net,
+        fee,
+    });
     Ok(())
 }

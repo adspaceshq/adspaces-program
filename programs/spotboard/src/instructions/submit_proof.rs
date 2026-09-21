@@ -3,6 +3,7 @@ use anchor_lang::prelude::*;
 use crate::{
     constants::*,
     error::SpotboardError,
+    events::ProofSubmitted,
     state::{Listing, Spot},
 };
 
@@ -43,5 +44,12 @@ pub fn handle_submit_proof(ctx: Context<SubmitProof>, proof_hash: [u8; 32]) -> R
     );
     spot.proof_hash = proof_hash;
     spot.proof_submitted_at = now;
+    emit!(ProofSubmitted {
+        listing: ctx.accounts.listing.key(),
+        index: spot.index,
+        seller: ctx.accounts.seller.key(),
+        proof_hash,
+        submitted_at: now,
+    });
     Ok(())
 }
