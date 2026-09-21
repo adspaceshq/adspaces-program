@@ -178,4 +178,140 @@ describe("auction spots", () => {
     expect(aliceAccount.amount).to.equal(1_000_000_000n);
     expect(vaultAccount.amount).to.equal(110_000_000n);
   });
+
+  it("requires double the current bid in double-up mode", async () => {
+    const first = anchor.web3.Keypair.generate();
+    const second = anchor.web3.Keypair.generate();
+    const doubleSlug = Array.from({ length: 16 }, (_, index) => 200 + index);
+    const [doubleListing] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("listing"), wallet.publicKey.toBuffer(), Buffer.from(doubleSlug)],
+      program.programId,
+    );
+    const [doubleSpot] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("spot"), doubleListing.toBuffer(), Buffer.from([0])],
+      program.programId,
+    );
+    const [doubleVault] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("vault"), doubleSpot.toBuffer()],
+      program.programId,
+    );
+
+    for (const bidder of [first, second]) {
+      const signature = await provider.connection.requestAirdrop(
+        bidder.publicKey,
+        anchor.web3.LAMPORTS_PER_SOL,
+      );
+      await provider.connection.confirmTransaction(signature, "confirmed");
+    }
+    const firstAta = await createAssociatedTokenAccount(
+      provider.connection,
+      wallet.payer,
+      paymentMint,
+      first.publicKey,
+    );
+    const secondAta = await createAssociatedTokenAccount(
+      provider.connection,
+      wallet.payer,
+      paymentMint,
+      second.publicKey,
+    );
+    for (const account of [firstAta, secondAta]) {
+      await mintTo(
+        provider.connection,
+        wallet.payer,
+        paymentMint,
+        account,
+        wallet.payer,
+        1_000_000_000,
+      );
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    await program.methods
+      .createListing(
+        doubleSlug,
+        "https://spotboard.test/listings/anchor-double-up",
+        1,
+        new anchor.BN(now + 3600),
+        new anchor.BN(now + 7200),
+        new anchor.BN(0),
+        true,
+      )
+      .accountsStrict({
+        seller: wallet.publicKey,
+        listing: doubleListing,
+        config,
+        usdcMint: paymentMint,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+    await program.methods
+      .addSpot(startPrice)
+      .accountsStrict({
+        seller: wallet.publicKey,
+        listing: doubleListing,
+        spot: doubleSpot,
+        vault: doubleVault,
+        usdcMint: paymentMint,
+        systemProgram: anchor.web3.SystemProgram.programId,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+      })
+      .rpc();
+    await program.methods
+      .placeBid(startPrice)
+      .accountsStrict({
+        bidder: first.publicKey,
+        listing: doubleListing,
+        spot: doubleSpot,
+        vault: doubleVault,
+        bidderAta: firstAta,
+        prevBidderAta: null,
+        usdcMint: paymentMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([first])
+      .rpc();
+
+    let rejected = false;
+    try {
+      await program.methods
+        .placeBid(new anchor.BN(150_000_000))
+        .accountsStrict({
+          bidder: second.publicKey,
+          listing: doubleListing,
+          spot: doubleSpot,
+          vault: doubleVault,
+          bidderAta: secondAta,
+          prevBidderAta: firstAta,
+          usdcMint: paymentMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([second])
+        .rpc();
+    } catch {
+      rejected = true;
+    }
+    expect(rejected).to.equal(true);
+
+    await program.methods
+      .placeBid(new anchor.BN(200_000_000))
+      .accountsStrict({
+        bidder: second.publicKey,
+        listing: doubleListing,
+        spot: doubleSpot,
+        vault: doubleVault,
+        bidderAta: secondAta,
+        prevBidderAta: firstAta,
+        usdcMint: paymentMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([second])
+      .rpc();
+
+    const stored = await program.account.spot.fetch(doubleSpot);
+    const refunded = await getAccount(provider.connection, firstAta);
+    expect(stored.currentBid.eq(new anchor.BN(200_000_000))).to.equal(true);
+    expect(refunded.amount).to.equal(1_000_000_000n);
+  });
 });
