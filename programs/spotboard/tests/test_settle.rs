@@ -161,6 +161,26 @@ fn submit_proof(env: &mut Env, seller: &Keypair, listing: &Pubkey, spot: &Pubkey
     send(&mut env.svm, &[ix], seller, &[]).unwrap();
 }
 
+#[allow(clippy::result_large_err)]
+fn dispute(
+    env: &mut Env,
+    buyer: &Keypair,
+    listing: &Pubkey,
+    spot: &Pubkey,
+) -> litesvm::types::TransactionResult {
+    let ix = new_ix(
+        program_id(),
+        spotboard::instruction::RaiseDispute {}.data(),
+        spotboard::accounts::RaiseDispute {
+            buyer: buyer.pubkey(),
+            listing: *listing,
+            spot: *spot,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[ix], buyer, &[])
+}
+
 #[test]
 fn withdraw_before_deadline_fails() {
     let mut env = Env::new();
@@ -332,5 +352,62 @@ fn proof_and_review_are_required_before_payout() {
         &treasury_ata
     )
     .is_err());
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+}
+
+#[test]
+fn only_winner_can_dispute_and_block_payout() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [25; 16], now + 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+    env.warp_to_timestamp(now + 86_400);
+    submit_proof(&mut env, &seller, &listing, &spot);
+    let stranger = Keypair::new();
+    env.svm.airdrop(&stranger.pubkey(), 10_000_000_000).unwrap();
+    assert!(dispute(&mut env, &stranger, &listing, &spot).is_err());
+    dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    env.warp_to_timestamp(now + 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
+    let treasury = env.treasury;
+    let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
+    assert!(withdraw(
+        &mut env,
+        &seller,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &seller_ata,
+        &treasury_ata
+    )
+    .is_err());
+    assert_eq!(
+        read_spot(&env.svm, &spot).status,
+        spotboard::constants::SPOT_DISPUTED
+    );
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+}
+
+#[test]
+fn winner_can_dispute_missing_proof_after_deadline() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [26; 16], now + 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+    env.warp_to_timestamp(now + 86_400);
+    dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    assert_eq!(
+        read_spot(&env.svm, &spot).status,
+        spotboard::constants::SPOT_DISPUTED
+    );
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 }

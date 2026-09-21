@@ -56,4 +56,8 @@ pub enum SpotboardError {
     InvalidProof,
     #[msg("Buyer review period is still open.")]
     ReviewWindowOpen,
+    #[msg("Buyer review period has ended.")]
+    ReviewWindowClosed,
+    #[msg("Only the winning buyer can dispute this spot.")]
+    NotWinningBuyer,
 }

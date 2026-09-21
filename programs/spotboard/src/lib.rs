@@ -42,6 +42,10 @@ pub mod spotboard {
         instructions::submit_proof::handle_submit_proof(ctx, proof_hash)
     }
 
+    pub fn raise_dispute(ctx: Context<RaiseDispute>) -> Result<()> {
+        instructions::raise_dispute::handle_raise_dispute(ctx)
+    }
+
     pub fn place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
         instructions::place_bid::handle_place_bid(ctx, amount)
     }
