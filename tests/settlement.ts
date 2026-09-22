@@ -3,6 +3,7 @@ import { Program } from "@coral-xyz/anchor";
 import {
   createAssociatedTokenAccount,
   getAccount,
+  getOrCreateAssociatedTokenAccount,
   mintTo,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
@@ -42,6 +43,8 @@ describe("spot settlement", () => {
   let buyerAta: anchor.web3.PublicKey;
   let sellerAta: anchor.web3.PublicKey;
   let treasuryAta: anchor.web3.PublicKey;
+  let sellerInitial: bigint;
+  let treasuryInitial: bigint;
 
   before(async () => {
     ({ paymentMint, treasury } = await ensureConfig(program, provider));
@@ -60,18 +63,24 @@ describe("spot settlement", () => {
       paymentMint,
       buyer.publicKey,
     );
-    sellerAta = await createAssociatedTokenAccount(
-      provider.connection,
-      wallet.payer,
-      paymentMint,
-      wallet.publicKey,
-    );
-    treasuryAta = await createAssociatedTokenAccount(
-      provider.connection,
-      wallet.payer,
-      paymentMint,
-      treasury,
-    );
+    sellerAta = (
+      await getOrCreateAssociatedTokenAccount(
+        provider.connection,
+        wallet.payer,
+        paymentMint,
+        wallet.publicKey,
+      )
+    ).address;
+    treasuryAta = (
+      await getOrCreateAssociatedTokenAccount(
+        provider.connection,
+        wallet.payer,
+        paymentMint,
+        treasury,
+      )
+    ).address;
+    sellerInitial = (await getAccount(provider.connection, sellerAta)).amount;
+    treasuryInitial = (await getAccount(provider.connection, treasuryAta)).amount;
     await mintTo(
       provider.connection,
       wallet.payer,
@@ -138,8 +147,8 @@ describe("spot settlement", () => {
     }
     expect(rejected).to.equal(true);
     expect((await getAccount(provider.connection, vault)).amount).to.equal(150_000_000n);
-    expect((await getAccount(provider.connection, sellerAta)).amount).to.equal(0n);
-    expect((await getAccount(provider.connection, treasuryAta)).amount).to.equal(0n);
+    expect((await getAccount(provider.connection, sellerAta)).amount).to.equal(sellerInitial);
+    expect((await getAccount(provider.connection, treasuryAta)).amount).to.equal(treasuryInitial);
     expect((await program.account.spot.fetch(spot)).status).to.equal(1);
   });
 
