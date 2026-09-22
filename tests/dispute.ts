@@ -221,4 +221,199 @@ describe("dispute lifecycle", () => {
     expect((await program.account.spot.fetch(spot)).status).to.equal(2);
     expect(await provider.connection.getAccountInfo(vault)).to.equal(null);
   });
+
+  it("refunds only the winning auction bidder after a missing-proof dispute", async () => {
+    const { paymentMint, treasury } = await ensureConfig(program, provider);
+    const alice = anchor.web3.Keypair.generate();
+    const bob = anchor.web3.Keypair.generate();
+    const auctionSlug = Array.from(anchor.web3.Keypair.generate().publicKey.toBytes().slice(0, 16));
+    const [auctionListing] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("listing"), wallet.publicKey.toBuffer(), Buffer.from(auctionSlug)],
+      program.programId,
+    );
+    const [auctionSpot] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("spot"), auctionListing.toBuffer(), Buffer.from([0])],
+      program.programId,
+    );
+    const [auctionVault] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("vault"), auctionSpot.toBuffer()],
+      program.programId,
+    );
+    const [auctionDispute] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("dispute"), auctionSpot.toBuffer()],
+      program.programId,
+    );
+    for (const bidder of [alice, bob]) {
+      const signature = await provider.connection.requestAirdrop(
+        bidder.publicKey,
+        anchor.web3.LAMPORTS_PER_SOL,
+      );
+      await provider.connection.confirmTransaction(signature, "confirmed");
+    }
+    const aliceAta = await createAssociatedTokenAccount(
+      provider.connection,
+      wallet.payer,
+      paymentMint,
+      alice.publicKey,
+    );
+    const bobAta = await createAssociatedTokenAccount(
+      provider.connection,
+      wallet.payer,
+      paymentMint,
+      bob.publicKey,
+    );
+    for (const account of [aliceAta, bobAta]) {
+      await mintTo(
+        provider.connection,
+        wallet.payer,
+        paymentMint,
+        account,
+        wallet.payer,
+        500_000_000,
+      );
+    }
+    const sellerAta = (
+      await getOrCreateAssociatedTokenAccount(
+        provider.connection,
+        wallet.payer,
+        paymentMint,
+        wallet.publicKey,
+      )
+    ).address;
+    const treasuryAta = (
+      await getOrCreateAssociatedTokenAccount(
+        provider.connection,
+        wallet.payer,
+        paymentMint,
+        treasury,
+      )
+    ).address;
+
+    const now = await validatorTime();
+    const deliveryEnd = now + 20;
+    await program.methods
+      .createListing(
+        auctionSlug,
+        "ipfs://spotboard-validator-auction-dispute",
+        1,
+        new anchor.BN(now + 12),
+        new anchor.BN(now + 12),
+        new anchor.BN(deliveryEnd),
+        new anchor.BN(10_000_000),
+        false,
+      )
+      .accountsStrict({
+        seller: wallet.publicKey,
+        listing: auctionListing,
+        config,
+        usdcMint: paymentMint,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+    await program.methods
+      .addSpot(new anchor.BN(100_000_000))
+      .accountsStrict({
+        seller: wallet.publicKey,
+        listing: auctionListing,
+        spot: auctionSpot,
+        vault: auctionVault,
+        usdcMint: paymentMint,
+        systemProgram: anchor.web3.SystemProgram.programId,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+      })
+      .rpc();
+    await program.methods
+      .placeBid(new anchor.BN(100_000_000))
+      .accountsStrict({
+        bidder: alice.publicKey,
+        listing: auctionListing,
+        spot: auctionSpot,
+        vault: auctionVault,
+        bidderAta: aliceAta,
+        prevBidderAta: null,
+        usdcMint: paymentMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([alice])
+      .rpc();
+    await program.methods
+      .placeBid(new anchor.BN(110_000_000))
+      .accountsStrict({
+        bidder: bob.publicKey,
+        listing: auctionListing,
+        spot: auctionSpot,
+        vault: auctionVault,
+        bidderAta: bobAta,
+        prevBidderAta: aliceAta,
+        usdcMint: paymentMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([bob])
+      .rpc();
+    expect((await getAccount(provider.connection, aliceAta)).amount).to.equal(500_000_000n);
+    expect((await getAccount(provider.connection, auctionVault)).amount).to.equal(110_000_000n);
+
+    await waitUntil(deliveryEnd);
+    let loserRejected = false;
+    try {
+      await program.methods
+        .raiseDispute(Array(32).fill(0), "")
+        .accountsStrict({
+          buyer: alice.publicKey,
+          listing: auctionListing,
+          spot: auctionSpot,
+          dispute: auctionDispute,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .signers([alice])
+        .rpc();
+    } catch {
+      loserRejected = true;
+    }
+    expect(loserRejected).to.equal(true);
+    await program.methods
+      .raiseDispute(Array(32).fill(0), "")
+      .accountsStrict({
+        buyer: bob.publicKey,
+        listing: auctionListing,
+        spot: auctionSpot,
+        dispute: auctionDispute,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([bob])
+      .rpc();
+    const openedDispute = await program.account.disputeRecord.fetch(auctionDispute);
+    expect(openedDispute.buyer.equals(bob.publicKey)).to.equal(true);
+    expect(openedDispute.proofSubmitted).to.equal(false);
+    expect(openedDispute.evidenceUri).to.equal("");
+
+    const sellerBefore = (await getAccount(provider.connection, sellerAta)).amount;
+    const treasuryBefore = (await getAccount(provider.connection, treasuryAta)).amount;
+    await program.methods
+      .resolveDispute(0, Array(32).fill(4), "ipfs://spotboard-validator-auction-refund")
+      .accountsStrict({
+        resolver: wallet.publicKey,
+        config,
+        listing: auctionListing,
+        spot: auctionSpot,
+        dispute: auctionDispute,
+        vault: auctionVault,
+        sellerAta,
+        seller: wallet.publicKey,
+        buyerAta: bobAta,
+        treasuryAta,
+        usdcMint: paymentMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+    const decision = await program.account.disputeRecord.fetch(auctionDispute);
+    expect(decision.sellerShareBps).to.equal(0);
+    expect(decision.buyerRefund.toString()).to.equal("110000000");
+    expect((await getAccount(provider.connection, bobAta)).amount).to.equal(500_000_000n);
+    expect((await getAccount(provider.connection, sellerAta)).amount).to.equal(sellerBefore);
+    expect((await getAccount(provider.connection, treasuryAta)).amount).to.equal(treasuryBefore);
+    expect((await program.account.spot.fetch(auctionSpot)).status).to.equal(2);
+    expect(await provider.connection.getAccountInfo(auctionVault)).to.equal(null);
+  });
 });
