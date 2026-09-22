@@ -699,6 +699,30 @@ fn only_winner_can_dispute_and_block_payout() {
     );
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 
+    env.warp_to_timestamp(now + 365 * 86_400);
+    assert!(refund(
+        &mut env,
+        &stranger,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &buyer_ata,
+    )
+    .is_err());
+    assert!(withdraw(
+        &mut env,
+        &seller,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &seller_ata,
+        &treasury_ata,
+    )
+    .is_err());
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+
     let resolver = env.mint_authority.pubkey();
     let (dispute_record, _) = dispute_pda(&spot);
     let resolve = new_ix(
