@@ -30,6 +30,21 @@ pub mod spotboard {
         instructions::update_config::handle_update_config(ctx, treasury, fee_bps)
     }
 
+    pub fn propose_config_authority(
+        ctx: Context<ProposeConfigAuthority>,
+        proposed_authority: Pubkey,
+    ) -> Result<()> {
+        instructions::config_authority::handle_propose_config_authority(ctx, proposed_authority)
+    }
+
+    pub fn accept_config_authority(ctx: Context<AcceptConfigAuthority>) -> Result<()> {
+        instructions::config_authority::handle_accept_config_authority(ctx)
+    }
+
+    pub fn cancel_config_authority(ctx: Context<CancelConfigAuthority>) -> Result<()> {
+        instructions::config_authority::handle_cancel_config_authority(ctx)
+    }
+
     pub fn close_spot(ctx: Context<CloseSpot>) -> Result<()> {
         instructions::close_spot::handle_close_spot(ctx)
     }

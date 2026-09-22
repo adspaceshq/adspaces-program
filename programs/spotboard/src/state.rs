@@ -14,6 +14,15 @@ pub struct Config {
 
 #[account]
 #[derive(InitSpace)]
+pub struct AuthorityTransfer {
+    pub config: Pubkey,
+    pub current_authority: Pubkey,
+    pub proposed_authority: Pubkey,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
 pub struct Listing {
     pub seller: Pubkey,
     /// First 16 bytes of sha256(slug).

@@ -15,6 +15,24 @@ pub struct ConfigUpdated {
 }
 
 #[event]
+pub struct ConfigAuthorityProposed {
+    pub current_authority: Pubkey,
+    pub proposed_authority: Pubkey,
+}
+
+#[event]
+pub struct ConfigAuthorityAccepted {
+    pub previous_authority: Pubkey,
+    pub new_authority: Pubkey,
+}
+
+#[event]
+pub struct ConfigAuthorityCancelled {
+    pub authority: Pubkey,
+    pub proposed_authority: Pubkey,
+}
+
+#[event]
 pub struct ListingCreated {
     pub listing: Pubkey,
     pub seller: Pubkey,

@@ -61,4 +61,86 @@ describe("protocol config", () => {
     expect(stored.treasury.equals(nextTreasury)).to.equal(true);
     expect(stored.feeBps).to.equal(300);
   });
+
+  it("requires the proposed authority to accept a handoff", async () => {
+    const replacement = anchor.web3.Keypair.generate();
+    const signature = await provider.connection.requestAirdrop(
+      replacement.publicKey,
+      anchor.web3.LAMPORTS_PER_SOL,
+    );
+    await provider.connection.confirmTransaction(signature, "confirmed");
+    const [transfer] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("authority_transfer"), config.toBuffer()],
+      program.programId,
+    );
+
+    await program.methods
+      .proposeConfigAuthority(replacement.publicKey)
+      .accountsStrict({
+        authority: wallet.publicKey,
+        config,
+        transfer,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+    const pending = await program.account.authorityTransfer.fetch(transfer);
+    expect(pending.currentAuthority.equals(wallet.publicKey)).to.equal(true);
+    expect(pending.proposedAuthority.equals(replacement.publicKey)).to.equal(true);
+    expect((await program.account.config.fetch(config)).authority.equals(wallet.publicKey)).to.equal(
+      true,
+    );
+
+    let rejected = false;
+    try {
+      await program.methods
+        .acceptConfigAuthority()
+        .accountsStrict({
+          proposedAuthority: wallet.publicKey,
+          config,
+          transfer,
+          previousAuthority: wallet.publicKey,
+        })
+        .rpc();
+    } catch {
+      rejected = true;
+    }
+    expect(rejected).to.equal(true);
+
+    await program.methods
+      .acceptConfigAuthority()
+      .accountsStrict({
+        proposedAuthority: replacement.publicKey,
+        config,
+        transfer,
+        previousAuthority: wallet.publicKey,
+      })
+      .signers([replacement])
+      .rpc();
+    expect((await program.account.config.fetch(config)).authority.equals(replacement.publicKey)).to
+      .equal(true);
+    expect(await provider.connection.getAccountInfo(transfer)).to.equal(null);
+
+    await program.methods
+      .proposeConfigAuthority(wallet.publicKey)
+      .accountsStrict({
+        authority: replacement.publicKey,
+        config,
+        transfer,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([replacement])
+      .rpc();
+    await program.methods
+      .acceptConfigAuthority()
+      .accountsStrict({
+        proposedAuthority: wallet.publicKey,
+        config,
+        transfer,
+        previousAuthority: replacement.publicKey,
+      })
+      .rpc();
+    expect((await program.account.config.fetch(config)).authority.equals(wallet.publicKey)).to.equal(
+      true,
+    );
+  });
 });

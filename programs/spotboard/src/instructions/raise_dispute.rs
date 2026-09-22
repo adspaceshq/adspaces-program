@@ -67,7 +67,7 @@ pub fn handle_raise_dispute(
     let proof_submitted = spot.proof_submitted_at > 0;
     let has_evidence = evidence_hash != [0; 32];
     require!(
-        has_evidence == !evidence_uri.is_empty()
+        has_evidence != evidence_uri.is_empty()
             && evidence_uri.len() <= DISPUTE_URI_MAX_LEN
             && (!proof_submitted || has_evidence),
         SpotboardError::InvalidDisputeEvidence

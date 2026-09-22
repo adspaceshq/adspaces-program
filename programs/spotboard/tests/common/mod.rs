@@ -39,6 +39,16 @@ pub fn config_pda() -> (Pubkey, u8) {
     Pubkey::find_program_address(&[spotboard::constants::CONFIG_SEED], &program_id())
 }
 
+pub fn authority_transfer_pda(config: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[
+            spotboard::constants::AUTHORITY_TRANSFER_SEED,
+            config.as_ref(),
+        ],
+        &program_id(),
+    )
+}
+
 pub fn listing_pda(seller: &Pubkey, slug_hash: &[u8; 16]) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
@@ -250,6 +260,15 @@ pub fn read_config(svm: &LiteSVM, config: &Pubkey) -> spotboard::state::Config {
     let account = svm.get_account(config).unwrap();
     let mut data: &[u8] = &account.data;
     spotboard::state::Config::try_deserialize(&mut data).unwrap()
+}
+
+pub fn read_authority_transfer(
+    svm: &LiteSVM,
+    transfer: &Pubkey,
+) -> spotboard::state::AuthorityTransfer {
+    let account = svm.get_account(transfer).unwrap();
+    let mut data: &[u8] = &account.data;
+    spotboard::state::AuthorityTransfer::try_deserialize(&mut data).unwrap()
 }
 
 pub fn token_balance(svm: &LiteSVM, account: &Pubkey) -> u64 {

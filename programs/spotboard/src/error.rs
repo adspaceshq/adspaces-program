@@ -74,4 +74,6 @@ pub enum SpotboardError {
     InvalidDisputeEvidence,
     #[msg("Decision hash and URI must be present, and URI at most 200 bytes.")]
     InvalidDecisionEvidence,
+    #[msg("Proposed authority must be a different, nondefault address.")]
+    InvalidAuthorityTransfer,
 }

@@ -4,6 +4,9 @@ use anchor_lang::prelude::*;
 pub const CONFIG_SEED: &[u8] = b"config";
 
 #[constant]
+pub const AUTHORITY_TRANSFER_SEED: &[u8] = b"authority_transfer";
+
+#[constant]
 pub const LISTING_SEED: &[u8] = b"listing";
 
 #[constant]
