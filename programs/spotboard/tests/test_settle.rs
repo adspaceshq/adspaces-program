@@ -234,12 +234,24 @@ fn dispute(
     listing: &Pubkey,
     spot: &Pubkey,
 ) -> litesvm::types::TransactionResult {
+    dispute_with_evidence(env, buyer, listing, spot, [9; 32], DISPUTE_URI)
+}
+
+#[allow(clippy::result_large_err)]
+fn dispute_with_evidence(
+    env: &mut Env,
+    buyer: &Keypair,
+    listing: &Pubkey,
+    spot: &Pubkey,
+    evidence_hash: [u8; 32],
+    evidence_uri: &str,
+) -> litesvm::types::TransactionResult {
     let (dispute, _) = dispute_pda(spot);
     let ix = new_ix(
         program_id(),
         spotboard::instruction::RaiseDispute {
-            evidence_hash: [9; 32],
-            evidence_uri: DISPUTE_URI.to_string(),
+            evidence_hash,
+            evidence_uri: evidence_uri.to_string(),
         }
         .data(),
         spotboard::accounts::RaiseDispute {
@@ -633,8 +645,21 @@ fn only_winner_can_dispute_and_block_payout() {
     env.svm.airdrop(&stranger.pubkey(), 10_000_000_000).unwrap();
     assert!(dispute(&mut env, &stranger, &listing, &spot).is_err());
     env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS / 2);
-    let dispute_meta = dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    for (hash, uri) in [
+        ([0; 32], "".to_string()),
+        ([9; 32], "".to_string()),
+        ([0; 32], DISPUTE_URI.to_string()),
+        (
+            [9; 32],
+            "x".repeat(spotboard::constants::DISPUTE_URI_MAX_LEN + 1),
+        ),
+    ] {
+        assert!(dispute_with_evidence(&mut env, &buyer, &listing, &spot, hash, &uri).is_err());
+    }
     let (dispute_record, _) = dispute_pda(&spot);
+    assert!(env.svm.get_account(&dispute_record).is_none());
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+    let dispute_meta = dispute(&mut env, &buyer, &listing, &spot).unwrap();
     let stored_dispute = read_dispute(&env.svm, &dispute_record);
     assert_eq!(stored_dispute.spot, spot);
     assert_eq!(stored_dispute.buyer, buyer.pubkey());
@@ -712,8 +737,25 @@ fn only_winner_can_dispute_and_block_payout() {
     }
     .data();
     assert!(send(&mut env.svm, &[invalid_decision], &env.mint_authority, &[]).is_err());
+    for (hash, uri) in [
+        ([7; 32], "".to_string()),
+        ([0; 32], DECISION_URI.to_string()),
+        (
+            [7; 32],
+            "x".repeat(spotboard::constants::DISPUTE_URI_MAX_LEN + 1),
+        ),
+    ] {
+        let mut invalid_decision = resolve.clone();
+        invalid_decision.data = spotboard::instruction::ResolveDispute {
+            seller_share_bps: 5_000,
+            decision_hash: hash,
+            decision_uri: uri,
+        }
+        .data();
+        assert!(send(&mut env.svm, &[invalid_decision], &env.mint_authority, &[]).is_err());
+    }
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
-    let resolve_meta = send(&mut env.svm, &[resolve], &env.mint_authority, &[]).unwrap();
+    let resolve_meta = send(&mut env.svm, &[resolve.clone()], &env.mint_authority, &[]).unwrap();
     let half = PRICE / 2;
     let fee = half as u128 * FEE_BPS / 10_000;
     let stored_dispute = read_dispute(&env.svm, &dispute_record);
@@ -742,6 +784,8 @@ fn only_winner_can_dispute_and_block_payout() {
     assert_eq!(token_balance(&env.svm, &seller_ata), half - fee as u64);
     assert_eq!(token_balance(&env.svm, &treasury_ata), fee as u64);
     assert!(env.svm.get_account(&vault).is_none());
+    env.svm.expire_blockhash();
+    assert!(send(&mut env.svm, &[resolve], &env.mint_authority, &[]).is_err());
 }
 
 #[test]
