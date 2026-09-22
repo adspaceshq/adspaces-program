@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::constants::METADATA_URI_MAX_LEN;
+use crate::constants::{METADATA_URI_MAX_LEN, PROOF_URI_MAX_LEN};
 
 #[account]
 #[derive(InitSpace)]
@@ -49,4 +49,15 @@ pub struct Spot {
     pub vault_bump: u8,
     pub proof_hash: [u8; 32],
     pub proof_submitted_at: i64,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct ProofRecord {
+    pub spot: Pubkey,
+    pub proof_hash: [u8; 32],
+    #[max_len(PROOF_URI_MAX_LEN)]
+    pub proof_uri: String,
+    pub submitted_at: i64,
+    pub bump: u8,
 }

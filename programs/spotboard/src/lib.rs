@@ -38,8 +38,12 @@ pub mod spotboard {
         instructions::withdraw_seller::handle_withdraw_seller(ctx)
     }
 
-    pub fn submit_proof(ctx: Context<SubmitProof>, proof_hash: [u8; 32]) -> Result<()> {
-        instructions::submit_proof::handle_submit_proof(ctx, proof_hash)
+    pub fn submit_proof(
+        ctx: Context<SubmitProof>,
+        proof_hash: [u8; 32],
+        proof_uri: String,
+    ) -> Result<()> {
+        instructions::submit_proof::handle_submit_proof(ctx, proof_hash, proof_uri)
     }
 
     pub fn raise_dispute(ctx: Context<RaiseDispute>) -> Result<()> {

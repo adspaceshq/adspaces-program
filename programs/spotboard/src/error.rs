@@ -68,4 +68,6 @@ pub enum SpotboardError {
     DeliveryDeadlinePending,
     #[msg("Proof exists; refund requires dispute resolution or seller cancellation.")]
     ProofExists,
+    #[msg("Proof URI must be nonempty and at most 200 bytes.")]
+    InvalidProofUri,
 }

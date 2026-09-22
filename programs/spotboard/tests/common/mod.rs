@@ -64,6 +64,13 @@ pub fn vault_pda(spot: &Pubkey) -> (Pubkey, u8) {
     )
 }
 
+pub fn proof_pda(spot: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[spotboard::constants::PROOF_SEED, spot.as_ref()],
+        &program_id(),
+    )
+}
+
 pub struct Env {
     pub svm: LiteSVM,
     pub mint_authority: Keypair,
@@ -218,6 +225,12 @@ pub fn read_spot(svm: &LiteSVM, spot: &Pubkey) -> spotboard::state::Spot {
     let account = svm.get_account(spot).unwrap();
     let mut data: &[u8] = &account.data;
     spotboard::state::Spot::try_deserialize(&mut data).unwrap()
+}
+
+pub fn read_proof(svm: &LiteSVM, proof: &Pubkey) -> spotboard::state::ProofRecord {
+    let account = svm.get_account(proof).unwrap();
+    let mut data: &[u8] = &account.data;
+    spotboard::state::ProofRecord::try_deserialize(&mut data).unwrap()
 }
 
 pub fn read_config(svm: &LiteSVM, config: &Pubkey) -> spotboard::state::Config {

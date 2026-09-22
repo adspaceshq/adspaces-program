@@ -13,6 +13,7 @@ use common::*;
 
 const PRICE: u64 = 150_000_000; // 150 USDC
 const FEE_BPS: u128 = 250;
+const PROOF_URI: &str = "ipfs://spotboard-proof-test";
 
 fn assert_event<E: Event>(meta: &litesvm::types::TransactionMetadata, event: &E) {
     let encoded = base64::engine::general_purpose::STANDARD.encode(event.data());
@@ -183,26 +184,41 @@ fn refund(
 }
 
 #[allow(clippy::result_large_err)]
-fn try_submit_proof(
+fn try_submit_proof_with_uri(
     env: &mut Env,
     seller: &Keypair,
     listing: &Pubkey,
     spot: &Pubkey,
+    proof_uri: &str,
 ) -> litesvm::types::TransactionResult {
+    let (proof, _) = proof_pda(spot);
     let ix = new_ix(
         program_id(),
         spotboard::instruction::SubmitProof {
             proof_hash: [7; 32],
+            proof_uri: proof_uri.to_string(),
         }
         .data(),
         spotboard::accounts::SubmitProof {
             seller: seller.pubkey(),
             listing: *listing,
             spot: *spot,
+            proof,
+            system_program: system_program::ID,
         }
         .to_account_metas(None),
     );
     send(&mut env.svm, &[ix], seller, &[])
+}
+
+#[allow(clippy::result_large_err)]
+fn try_submit_proof(
+    env: &mut Env,
+    seller: &Keypair,
+    listing: &Pubkey,
+    spot: &Pubkey,
+) -> litesvm::types::TransactionResult {
+    try_submit_proof_with_uri(env, seller, listing, spot, PROOF_URI)
 }
 
 fn submit_proof(env: &mut Env, seller: &Keypair, listing: &Pubkey, spot: &Pubkey) {
@@ -272,11 +288,21 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
 
     env.warp_to_timestamp(now + 31 * 86_400);
     let proof_meta = try_submit_proof(&mut env, &seller, &listing, &spot).unwrap();
+    let (proof, _) = proof_pda(&spot);
+    let stored_proof = read_proof(&env.svm, &proof);
+    assert_eq!(stored_proof.spot, spot);
+    assert_eq!(stored_proof.proof_hash, [7; 32]);
+    assert_eq!(stored_proof.proof_uri, PROOF_URI);
+    assert_eq!(
+        stored_proof.submitted_at,
+        read_spot(&env.svm, &spot).proof_submitted_at
+    );
     assert_event(
         &proof_meta,
         &spotboard::events::ProofSubmitted {
             listing,
             index: 0,
+            proof,
             seller: seller.pubkey(),
             proof_hash: [7; 32],
             submitted_at: read_spot(&env.svm, &spot).proof_submitted_at,
@@ -725,6 +751,28 @@ fn late_proof_is_rejected() {
     claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
     env.warp_to_timestamp(now + 8 * 86_400);
     assert!(try_submit_proof(&mut env, &seller, &listing, &spot).is_err());
+    assert_eq!(read_spot(&env.svm, &spot).proof_submitted_at, 0);
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+}
+
+#[test]
+fn proof_uri_must_be_nonempty_and_bounded() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [31; 16], now + 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+    env.warp_to_timestamp(now + 86_400);
+
+    assert!(try_submit_proof_with_uri(&mut env, &seller, &listing, &spot, "").is_err());
+    assert!(
+        try_submit_proof_with_uri(&mut env, &seller, &listing, &spot, &"a".repeat(201)).is_err()
+    );
+    let (proof, _) = proof_pda(&spot);
+    assert!(env.svm.get_account(&proof).is_none());
     assert_eq!(read_spot(&env.svm, &spot).proof_submitted_at, 0);
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 }

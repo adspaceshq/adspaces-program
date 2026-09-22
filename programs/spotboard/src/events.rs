@@ -72,6 +72,7 @@ pub struct SpotClosed {
 pub struct ProofSubmitted {
     pub listing: Pubkey,
     pub index: u8,
+    pub proof: Pubkey,
     pub seller: Pubkey,
     pub proof_hash: [u8; 32],
     pub submitted_at: i64,
