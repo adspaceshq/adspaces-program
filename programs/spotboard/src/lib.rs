@@ -58,8 +58,18 @@ pub mod spotboard {
         instructions::refund_spot::handle_refund_spot(ctx)
     }
 
-    pub fn resolve_dispute(ctx: Context<ResolveDispute>, seller_share_bps: u16) -> Result<()> {
-        instructions::resolve_dispute::handle_resolve_dispute(ctx, seller_share_bps)
+    pub fn resolve_dispute(
+        ctx: Context<ResolveDispute>,
+        seller_share_bps: u16,
+        decision_hash: [u8; 32],
+        decision_uri: String,
+    ) -> Result<()> {
+        instructions::resolve_dispute::handle_resolve_dispute(
+            ctx,
+            seller_share_bps,
+            decision_hash,
+            decision_uri,
+        )
     }
 
     pub fn place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {

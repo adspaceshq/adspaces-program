@@ -5,7 +5,7 @@ use crate::{
     constants::*,
     error::SpotboardError,
     events::DisputeResolved,
-    state::{Config, Listing, Spot},
+    state::{Config, DisputeRecord, Listing, Spot},
 };
 
 #[derive(Accounts)]
@@ -30,6 +30,13 @@ pub struct ResolveDispute<'info> {
         constraint = spot.status == SPOT_DISPUTED @ SpotboardError::SpotNotFunded,
     )]
     pub spot: Box<Account<'info, Spot>>,
+    #[account(
+        mut,
+        seeds = [DISPUTE_SEED, spot.key().as_ref()],
+        bump = dispute.bump,
+        constraint = dispute.spot == spot.key() @ SpotboardError::Unauthorized,
+    )]
+    pub dispute: Box<Account<'info, DisputeRecord>>,
     #[account(
         mut,
         constraint = vault.key() == spot.vault @ SpotboardError::Unauthorized,
@@ -58,8 +65,19 @@ pub struct ResolveDispute<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-pub fn handle_resolve_dispute(ctx: Context<ResolveDispute>, seller_share_bps: u16) -> Result<()> {
+pub fn handle_resolve_dispute(
+    ctx: Context<ResolveDispute>,
+    seller_share_bps: u16,
+    decision_hash: [u8; 32],
+    decision_uri: String,
+) -> Result<()> {
     require!(seller_share_bps <= 10_000, SpotboardError::InvalidFeeBps);
+    require!(
+        decision_hash != [0; 32]
+            && !decision_uri.is_empty()
+            && decision_uri.len() <= DISPUTE_URI_MAX_LEN,
+        SpotboardError::InvalidDecisionEvidence
+    );
     let balance = ctx.accounts.vault.amount;
     require!(balance > 0, SpotboardError::SpotNotFunded);
     let seller_gross = ((balance as u128) * (seller_share_bps as u128) / 10_000) as u64;
@@ -104,11 +122,21 @@ pub fn handle_resolve_dispute(ctx: Context<ResolveDispute>, seller_share_bps: u1
         },
         signer_seeds,
     ))?;
+    let dispute = &mut ctx.accounts.dispute;
+    dispute.decision_hash = decision_hash;
+    dispute.decision_uri = decision_uri;
+    dispute.decided_at = Clock::get()?.unix_timestamp;
+    dispute.seller_share_bps = seller_share_bps;
+    dispute.buyer_refund = buyer_refund;
+    dispute.seller_amount = seller_net;
+    dispute.fee = fee;
     ctx.accounts.spot.status = SPOT_FINALIZED;
     emit!(DisputeResolved {
         listing: listing_key,
         index,
+        dispute: dispute.key(),
         resolver: ctx.accounts.resolver.key(),
+        decision_hash,
         seller_share_bps,
         buyer_refund,
         seller_amount: seller_net,

@@ -93,7 +93,9 @@ pub struct DisputeRaised {
 pub struct DisputeResolved {
     pub listing: Pubkey,
     pub index: u8,
+    pub dispute: Pubkey,
     pub resolver: Pubkey,
+    pub decision_hash: [u8; 32],
     pub seller_share_bps: u16,
     pub buyer_refund: u64,
     pub seller_amount: u64,

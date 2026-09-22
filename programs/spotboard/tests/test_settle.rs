@@ -15,6 +15,7 @@ const PRICE: u64 = 150_000_000; // 150 USDC
 const FEE_BPS: u128 = 250;
 const PROOF_URI: &str = "ipfs://spotboard-proof-test";
 const DISPUTE_URI: &str = "ipfs://spotboard-dispute-test";
+const DECISION_URI: &str = "ipfs://spotboard-decision-test";
 
 fn assert_event<E: Event>(meta: &litesvm::types::TransactionMetadata, event: &E) {
     let encoded = base64::engine::general_purpose::STANDARD.encode(event.data());
@@ -674,10 +675,13 @@ fn only_winner_can_dispute_and_block_payout() {
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 
     let resolver = env.mint_authority.pubkey();
+    let (dispute_record, _) = dispute_pda(&spot);
     let resolve = new_ix(
         program_id(),
         spotboard::instruction::ResolveDispute {
             seller_share_bps: 5_000,
+            decision_hash: [7; 32],
+            decision_uri: DECISION_URI.to_string(),
         }
         .data(),
         spotboard::accounts::ResolveDispute {
@@ -685,6 +689,7 @@ fn only_winner_can_dispute_and_block_payout() {
             config: env.config,
             listing,
             spot,
+            dispute: dispute_record,
             vault,
             seller_ata,
             seller: seller.pubkey(),
@@ -699,15 +704,34 @@ fn only_winner_can_dispute_and_block_payout() {
     unauthorized.accounts[0].pubkey = stranger.pubkey();
     assert!(send(&mut env.svm, &[unauthorized], &stranger, &[]).is_err());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
+    let mut invalid_decision = resolve.clone();
+    invalid_decision.data = spotboard::instruction::ResolveDispute {
+        seller_share_bps: 5_000,
+        decision_hash: [0; 32],
+        decision_uri: String::new(),
+    }
+    .data();
+    assert!(send(&mut env.svm, &[invalid_decision], &env.mint_authority, &[]).is_err());
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
     let resolve_meta = send(&mut env.svm, &[resolve], &env.mint_authority, &[]).unwrap();
     let half = PRICE / 2;
     let fee = half as u128 * FEE_BPS / 10_000;
+    let stored_dispute = read_dispute(&env.svm, &dispute_record);
+    assert_eq!(stored_dispute.decision_hash, [7; 32]);
+    assert_eq!(stored_dispute.decision_uri, DECISION_URI);
+    assert_eq!(stored_dispute.decided_at, env.clock().unix_timestamp);
+    assert_eq!(stored_dispute.seller_share_bps, 5_000);
+    assert_eq!(stored_dispute.buyer_refund, half);
+    assert_eq!(stored_dispute.seller_amount, half - fee as u64);
+    assert_eq!(stored_dispute.fee, fee as u64);
     assert_event(
         &resolve_meta,
         &spotboard::events::DisputeResolved {
             listing,
             index: 0,
+            dispute: dispute_record,
             resolver,
+            decision_hash: [7; 32],
             seller_share_bps: 5_000,
             buyer_refund: half,
             seller_amount: half - fee as u64,

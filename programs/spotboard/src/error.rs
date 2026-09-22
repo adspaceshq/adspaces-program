@@ -72,4 +72,6 @@ pub enum SpotboardError {
     InvalidProofUri,
     #[msg("Dispute evidence hash and URI must both be present or both absent, and URI at most 200 bytes.")]
     InvalidDisputeEvidence,
+    #[msg("Decision hash and URI must be present, and URI at most 200 bytes.")]
+    InvalidDecisionEvidence,
 }

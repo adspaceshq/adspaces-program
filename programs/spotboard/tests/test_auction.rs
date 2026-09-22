@@ -333,10 +333,13 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
     let treasury = env.treasury;
     let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
+    let (dispute_record, _) = dispute_pda(&spot);
     let resolve = new_ix(
         program_id(),
         spotboard::instruction::ResolveDispute {
             seller_share_bps: 0,
+            decision_hash: [7; 32],
+            decision_uri: "ipfs://auction-refund-decision".to_string(),
         }
         .data(),
         spotboard::accounts::ResolveDispute {
@@ -344,6 +347,7 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
             config: env.config,
             listing,
             spot,
+            dispute: dispute_record,
             vault,
             seller_ata,
             seller: seller.pubkey(),
@@ -355,6 +359,9 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
         .to_account_metas(None),
     );
     send(&mut env.svm, &[resolve], &env.mint_authority, &[]).unwrap();
+    let stored_dispute = read_dispute(&env.svm, &dispute_record);
+    assert_eq!(stored_dispute.seller_share_bps, 0);
+    assert_eq!(stored_dispute.buyer_refund, 110_000_000);
     assert_eq!(token_balance(&env.svm, &bob_ata), 1_000_000_000);
     assert_eq!(token_balance(&env.svm, &seller_ata), 0);
     assert_eq!(token_balance(&env.svm, &treasury_ata), 0);
