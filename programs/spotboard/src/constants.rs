@@ -16,12 +16,17 @@ pub const VAULT_SEED: &[u8] = b"vault";
 pub const PROOF_SEED: &[u8] = b"proof";
 
 #[constant]
+pub const DISPUTE_SEED: &[u8] = b"dispute";
+
+#[constant]
 pub const MAX_SPOTS_PER_LISTING: u8 = 60;
 
 /// Plain const: `usize` has no IDL representation, so `#[constant]` cannot be used.
 pub const METADATA_URI_MAX_LEN: usize = 200;
 
 pub const PROOF_URI_MAX_LEN: usize = 200;
+
+pub const DISPUTE_URI_MAX_LEN: usize = 200;
 
 #[constant]
 pub const PLATFORM_FEE_BPS: u16 = 250;

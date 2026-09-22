@@ -70,4 +70,6 @@ pub enum SpotboardError {
     ProofExists,
     #[msg("Proof URI must be nonempty and at most 200 bytes.")]
     InvalidProofUri,
+    #[msg("Dispute evidence hash and URI must both be present or both absent, and URI at most 200 bytes.")]
+    InvalidDisputeEvidence,
 }

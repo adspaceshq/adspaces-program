@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::constants::{METADATA_URI_MAX_LEN, PROOF_URI_MAX_LEN};
+use crate::constants::{DISPUTE_URI_MAX_LEN, METADATA_URI_MAX_LEN, PROOF_URI_MAX_LEN};
 
 #[account]
 #[derive(InitSpace)]
@@ -59,5 +59,26 @@ pub struct ProofRecord {
     #[max_len(PROOF_URI_MAX_LEN)]
     pub proof_uri: String,
     pub submitted_at: i64,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct DisputeRecord {
+    pub spot: Pubkey,
+    pub buyer: Pubkey,
+    pub proof_submitted: bool,
+    pub evidence_hash: [u8; 32],
+    #[max_len(DISPUTE_URI_MAX_LEN)]
+    pub evidence_uri: String,
+    pub opened_at: i64,
+    pub decision_hash: [u8; 32],
+    #[max_len(DISPUTE_URI_MAX_LEN)]
+    pub decision_uri: String,
+    pub decided_at: i64,
+    pub seller_share_bps: u16,
+    pub buyer_refund: u64,
+    pub seller_amount: u64,
+    pub fee: u64,
     pub bump: u8,
 }

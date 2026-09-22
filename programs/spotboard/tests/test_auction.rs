@@ -304,14 +304,21 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
     assert_eq!(token_balance(&env.svm, &alice_ata), 1_000_000_000);
 
     env.warp_to_timestamp(now + 37 * 86_400);
+    let (dispute, _) = dispute_pda(&spot);
     let dispute_ix = |buyer: Pubkey| {
         new_ix(
             program_id(),
-            spotboard::instruction::RaiseDispute {}.data(),
+            spotboard::instruction::RaiseDispute {
+                evidence_hash: [0; 32],
+                evidence_uri: String::new(),
+            }
+            .data(),
             spotboard::accounts::RaiseDispute {
                 buyer,
                 listing,
                 spot,
+                dispute,
+                system_program: system_program::ID,
             }
             .to_account_metas(None),
         )

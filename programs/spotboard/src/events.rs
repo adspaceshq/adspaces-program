@@ -82,8 +82,10 @@ pub struct ProofSubmitted {
 pub struct DisputeRaised {
     pub listing: Pubkey,
     pub index: u8,
+    pub dispute: Pubkey,
     pub buyer: Pubkey,
     pub proof_submitted: bool,
+    pub evidence_hash: [u8; 32],
     pub raised_at: i64,
 }
 

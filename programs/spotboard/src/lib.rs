@@ -46,8 +46,12 @@ pub mod spotboard {
         instructions::submit_proof::handle_submit_proof(ctx, proof_hash, proof_uri)
     }
 
-    pub fn raise_dispute(ctx: Context<RaiseDispute>) -> Result<()> {
-        instructions::raise_dispute::handle_raise_dispute(ctx)
+    pub fn raise_dispute(
+        ctx: Context<RaiseDispute>,
+        evidence_hash: [u8; 32],
+        evidence_uri: String,
+    ) -> Result<()> {
+        instructions::raise_dispute::handle_raise_dispute(ctx, evidence_hash, evidence_uri)
     }
 
     pub fn refund_spot(ctx: Context<RefundSpot>) -> Result<()> {

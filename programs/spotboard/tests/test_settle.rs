@@ -14,6 +14,7 @@ use common::*;
 const PRICE: u64 = 150_000_000; // 150 USDC
 const FEE_BPS: u128 = 250;
 const PROOF_URI: &str = "ipfs://spotboard-proof-test";
+const DISPUTE_URI: &str = "ipfs://spotboard-dispute-test";
 
 fn assert_event<E: Event>(meta: &litesvm::types::TransactionMetadata, event: &E) {
     let encoded = base64::engine::general_purpose::STANDARD.encode(event.data());
@@ -232,13 +233,20 @@ fn dispute(
     listing: &Pubkey,
     spot: &Pubkey,
 ) -> litesvm::types::TransactionResult {
+    let (dispute, _) = dispute_pda(spot);
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::RaiseDispute {}.data(),
+        spotboard::instruction::RaiseDispute {
+            evidence_hash: [9; 32],
+            evidence_uri: DISPUTE_URI.to_string(),
+        }
+        .data(),
         spotboard::accounts::RaiseDispute {
             buyer: buyer.pubkey(),
             listing: *listing,
             spot: *spot,
+            dispute,
+            system_program: system_program::ID,
         }
         .to_account_metas(None),
     );
@@ -625,13 +633,22 @@ fn only_winner_can_dispute_and_block_payout() {
     assert!(dispute(&mut env, &stranger, &listing, &spot).is_err());
     env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS / 2);
     let dispute_meta = dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    let (dispute_record, _) = dispute_pda(&spot);
+    let stored_dispute = read_dispute(&env.svm, &dispute_record);
+    assert_eq!(stored_dispute.spot, spot);
+    assert_eq!(stored_dispute.buyer, buyer.pubkey());
+    assert!(stored_dispute.proof_submitted);
+    assert_eq!(stored_dispute.evidence_hash, [9; 32]);
+    assert_eq!(stored_dispute.evidence_uri, DISPUTE_URI);
     assert_event(
         &dispute_meta,
         &spotboard::events::DisputeRaised {
             listing,
             index: 0,
+            dispute: dispute_record,
             buyer: buyer.pubkey(),
             proof_submitted: true,
+            evidence_hash: [9; 32],
             raised_at: env.clock().unix_timestamp,
         },
     );
@@ -722,13 +739,17 @@ fn missing_proof_dispute_waits_for_delivery_deadline() {
     env.svm.expire_blockhash();
     env.warp_to_timestamp(now + 8 * 86_400);
     let dispute_meta = dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    let (dispute_record, _) = dispute_pda(&spot);
+    assert!(!read_dispute(&env.svm, &dispute_record).proof_submitted);
     assert_event(
         &dispute_meta,
         &spotboard::events::DisputeRaised {
             listing,
             index: 0,
+            dispute: dispute_record,
             buyer: buyer.pubkey(),
             proof_submitted: false,
+            evidence_hash: [9; 32],
             raised_at: env.clock().unix_timestamp,
         },
     );
