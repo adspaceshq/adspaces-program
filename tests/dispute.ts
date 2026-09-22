@@ -60,6 +60,16 @@ describe("dispute lifecycle", () => {
     }
   }
 
+  async function expectRejected(action: () => Promise<unknown>): Promise<void> {
+    let rejected = false;
+    try {
+      await action();
+    } catch {
+      rejected = true;
+    }
+    expect(rejected).to.equal(true);
+  }
+
   it("stores proof and evidence, then splits escrow by the resolver decision", async () => {
     const { paymentMint, treasury } = await ensureConfig(program, provider);
     const airdrop = await provider.connection.requestAirdrop(
@@ -164,18 +174,28 @@ describe("dispute lifecycle", () => {
     expect(storedProof.spot.equals(spot)).to.equal(true);
     expect(storedProof.proofUri).to.equal("ipfs://spotboard-validator-proof");
 
+    const raiseDispute = (hash: number[], uri: string) =>
+      program.methods
+        .raiseDispute(hash, uri)
+        .accountsStrict({
+          buyer: buyer.publicKey,
+          listing,
+          spot,
+          dispute,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .signers([buyer])
+        .rpc();
+    await expectRejected(() =>
+      raiseDispute(Array(32).fill(2), "ipfs://spotboard-validator-evidence"),
+    );
     await waitUntil(deliveryEnd);
-    await program.methods
-      .raiseDispute(Array(32).fill(2), "ipfs://spotboard-validator-evidence")
-      .accountsStrict({
-        buyer: buyer.publicKey,
-        listing,
-        spot,
-        dispute,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .signers([buyer])
-      .rpc();
+    await expectRejected(() => raiseDispute(Array(32).fill(0), ""));
+    expect(await provider.connection.getAccountInfo(dispute)).to.equal(null);
+    await raiseDispute(Array(32).fill(2), "ipfs://spotboard-validator-evidence");
+    await expectRejected(() =>
+      raiseDispute(Array(32).fill(2), "ipfs://spotboard-validator-evidence"),
+    );
     const openedDispute = await program.account.disputeRecord.fetch(dispute);
     expect(openedDispute.buyer.equals(buyer.publicKey)).to.equal(true);
     expect(openedDispute.evidenceUri).to.equal("ipfs://spotboard-validator-evidence");
@@ -184,23 +204,27 @@ describe("dispute lifecycle", () => {
 
     const sellerBefore = (await getAccount(provider.connection, sellerAta)).amount;
     const treasuryBefore = (await getAccount(provider.connection, treasuryAta)).amount;
-    await program.methods
-      .resolveDispute(5_000, Array(32).fill(3), "ipfs://spotboard-validator-decision")
-      .accountsStrict({
-        resolver: wallet.publicKey,
-        config,
-        listing,
-        spot,
-        dispute,
-        vault,
-        sellerAta,
-        seller: wallet.publicKey,
-        buyerAta,
-        treasuryAta,
-        usdcMint: paymentMint,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
-      .rpc();
+    const resolveDispute = (hash: number[], uri: string) =>
+      program.methods
+        .resolveDispute(5_000, hash, uri)
+        .accountsStrict({
+          resolver: wallet.publicKey,
+          config,
+          listing,
+          spot,
+          dispute,
+          vault,
+          sellerAta,
+          seller: wallet.publicKey,
+          buyerAta,
+          treasuryAta,
+          usdcMint: paymentMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc();
+    await expectRejected(() => resolveDispute(Array(32).fill(0), ""));
+    expect((await getAccount(provider.connection, vault)).amount).to.equal(price);
+    await resolveDispute(Array(32).fill(3), "ipfs://spotboard-validator-decision");
 
     const feeBps = (await program.account.listing.fetch(listing)).feeBps;
     const sellerGross = price / 2n;
@@ -220,6 +244,9 @@ describe("dispute lifecycle", () => {
     );
     expect((await program.account.spot.fetch(spot)).status).to.equal(2);
     expect(await provider.connection.getAccountInfo(vault)).to.equal(null);
+    await expectRejected(() =>
+      resolveDispute(Array(32).fill(3), "ipfs://spotboard-validator-decision"),
+    );
   });
 
   it("refunds only the winning auction bidder after a missing-proof dispute", async () => {
