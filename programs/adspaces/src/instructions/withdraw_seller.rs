@@ -3,7 +3,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount};
 
 use crate::{
     constants::*,
-    error::SpotboardError,
+    error::AdspacesError,
     events::SellerWithdrawn,
     state::{Listing, Spot},
 };
@@ -16,21 +16,21 @@ pub struct WithdrawSeller<'info> {
         bump = listing.bump,
     )]
     pub listing: Box<Account<'info, Listing>>,
-    #[account(mut, address = listing.seller @ SpotboardError::Unauthorized)]
+    #[account(mut, address = listing.seller @ AdspacesError::Unauthorized)]
     pub seller: SystemAccount<'info>,
     #[account(
         mut,
         seeds = [SPOT_SEED, listing.key().as_ref(), &[spot.index]],
         bump = spot.bump,
-        constraint = spot.listing == listing.key() @ SpotboardError::Unauthorized,
-        constraint = spot.status == SPOT_FUNDED @ SpotboardError::SpotNotFunded,
+        constraint = spot.listing == listing.key() @ AdspacesError::Unauthorized,
+        constraint = spot.status == SPOT_FUNDED @ AdspacesError::SpotNotFunded,
     )]
     pub spot: Box<Account<'info, Spot>>,
     #[account(
         mut,
-        constraint = vault.key() == spot.vault @ SpotboardError::Unauthorized,
-        constraint = vault.mint == listing.mint @ SpotboardError::InvalidMint,
-        constraint = vault.owner == spot.key() @ SpotboardError::Unauthorized,
+        constraint = vault.key() == spot.vault @ AdspacesError::Unauthorized,
+        constraint = vault.mint == listing.mint @ AdspacesError::InvalidMint,
+        constraint = vault.owner == spot.key() @ AdspacesError::Unauthorized,
     )]
     pub vault: Box<Account<'info, TokenAccount>>,
     #[account(
@@ -41,12 +41,12 @@ pub struct WithdrawSeller<'info> {
     pub seller_ata: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
-        constraint = treasury_ata.owner == listing.treasury @ SpotboardError::Unauthorized,
-        constraint = treasury_ata.mint == listing.mint @ SpotboardError::InvalidMint,
+        constraint = treasury_ata.owner == listing.treasury @ AdspacesError::Unauthorized,
+        constraint = treasury_ata.mint == listing.mint @ AdspacesError::InvalidMint,
     )]
     pub treasury_ata: Box<Account<'info, TokenAccount>>,
     #[account(
-        constraint = usdc_mint.key() == listing.mint @ SpotboardError::InvalidMint
+        constraint = usdc_mint.key() == listing.mint @ AdspacesError::InvalidMint
     )]
     pub usdc_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
@@ -56,31 +56,31 @@ pub fn handle_withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     require!(
         now >= ctx.accounts.listing.deadline,
-        SpotboardError::WithdrawTooEarly
+        AdspacesError::WithdrawTooEarly
     );
     require!(
         ctx.accounts.spot.proof_submitted_at > 0,
-        SpotboardError::ProofRequired
+        AdspacesError::ProofRequired
     );
     let review_end = ctx
         .accounts
         .listing
         .delivery_deadline
         .checked_add(REVIEW_WINDOW_SECONDS)
-        .ok_or(SpotboardError::MathOverflow)?;
-    require!(now >= review_end, SpotboardError::ReviewWindowOpen);
+        .ok_or(AdspacesError::MathOverflow)?;
+    require!(now >= review_end, AdspacesError::ReviewWindowOpen);
 
     let balance = ctx.accounts.vault.amount;
-    require!(balance > 0, SpotboardError::SpotNotFunded);
+    require!(balance > 0, AdspacesError::SpotNotFunded);
 
     let fee = (balance as u128)
         .checked_mul(ctx.accounts.listing.fee_bps as u128)
         .and_then(|v| v.checked_div(10_000))
         .and_then(|v| u64::try_from(v).ok())
-        .ok_or(SpotboardError::MathOverflow)?;
+        .ok_or(AdspacesError::MathOverflow)?;
     let seller_amount = balance
         .checked_sub(fee)
-        .ok_or(SpotboardError::MathOverflow)?;
+        .ok_or(AdspacesError::MathOverflow)?;
 
     let listing_key = ctx.accounts.listing.key();
     let spot_index = ctx.accounts.spot.index;

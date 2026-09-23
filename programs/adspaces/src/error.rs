@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 #[error_code]
-pub enum SpotboardError {
+pub enum AdspacesError {
     #[msg("Unknown pricing mode. Use 0 for fixed-price, 1 for auction.")]
     InvalidMode,
     #[msg("Deadline must be in the future.")]

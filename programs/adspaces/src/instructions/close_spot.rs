@@ -3,7 +3,7 @@ use anchor_spl::token::{self, Token, TokenAccount};
 
 use crate::{
     constants::*,
-    error::SpotboardError,
+    error::AdspacesError,
     events::SpotClosed,
     state::{Listing, Spot},
 };
@@ -15,23 +15,23 @@ pub struct CloseSpot<'info> {
     #[account(
         seeds = [LISTING_SEED, seller.key().as_ref(), listing.slug_hash.as_ref()],
         bump = listing.bump,
-        has_one = seller @ SpotboardError::Unauthorized,
+        has_one = seller @ AdspacesError::Unauthorized,
     )]
     pub listing: Account<'info, Listing>,
     #[account(
         mut,
         seeds = [SPOT_SEED, listing.key().as_ref(), &[spot.index]],
         bump = spot.bump,
-        constraint = spot.listing == listing.key() @ SpotboardError::Unauthorized,
-        constraint = spot.status == SPOT_OPEN @ SpotboardError::SpotAlreadyFunded,
+        constraint = spot.listing == listing.key() @ AdspacesError::Unauthorized,
+        constraint = spot.status == SPOT_OPEN @ AdspacesError::SpotAlreadyFunded,
     )]
     pub spot: Account<'info, Spot>,
     #[account(
         mut,
-        constraint = vault.key() == spot.vault @ SpotboardError::Unauthorized,
-        constraint = vault.mint == listing.mint @ SpotboardError::InvalidMint,
-        constraint = vault.owner == spot.key() @ SpotboardError::Unauthorized,
-        constraint = vault.amount == 0 @ SpotboardError::VaultNotEmpty,
+        constraint = vault.key() == spot.vault @ AdspacesError::Unauthorized,
+        constraint = vault.mint == listing.mint @ AdspacesError::InvalidMint,
+        constraint = vault.owner == spot.key() @ AdspacesError::Unauthorized,
+        constraint = vault.amount == 0 @ AdspacesError::VaultNotEmpty,
     )]
     pub vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,

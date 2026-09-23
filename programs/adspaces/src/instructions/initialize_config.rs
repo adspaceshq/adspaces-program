@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::Mint;
 
 use crate::{
-    constants::CONFIG_SEED, error::SpotboardError, events::ConfigInitialized, state::Config,
+    constants::CONFIG_SEED, error::AdspacesError, events::ConfigInitialized, state::Config,
 };
 
 #[derive(Accounts)]
@@ -18,9 +18,9 @@ pub struct InitializeConfig<'info> {
     )]
     pub config: Account<'info, Config>,
     #[account(constraint = program.programdata_address()? == Some(program_data.key()))]
-    pub program: Program<'info, crate::program::Spotboard>,
+    pub program: Program<'info, crate::program::Adspaces>,
     #[account(
-        constraint = program_data.upgrade_authority_address == Some(authority.key()) @ SpotboardError::InvalidConfigAuthority,
+        constraint = program_data.upgrade_authority_address == Some(authority.key()) @ AdspacesError::InvalidConfigAuthority,
     )]
     pub program_data: Account<'info, ProgramData>,
     pub payment_mint: Account<'info, Mint>,
@@ -52,7 +52,7 @@ pub fn handle_initialize_config(
 }
 
 pub(crate) fn validate_config(treasury: Pubkey, fee_bps: u16) -> Result<()> {
-    require!(treasury != Pubkey::default(), SpotboardError::Unauthorized);
-    require!(fee_bps <= 10_000, SpotboardError::InvalidFeeBps);
+    require!(treasury != Pubkey::default(), AdspacesError::Unauthorized);
+    require!(fee_bps <= 10_000, AdspacesError::InvalidFeeBps);
     Ok(())
 }

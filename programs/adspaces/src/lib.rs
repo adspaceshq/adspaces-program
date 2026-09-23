@@ -15,7 +15,7 @@ pub use state::*;
 declare_id!("6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW");
 
 #[program]
-pub mod spotboard {
+pub mod adspaces {
     use super::*;
 
     pub fn initialize_config(

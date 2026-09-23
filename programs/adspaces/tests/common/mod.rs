@@ -22,14 +22,14 @@ use solana_transaction::versioned::VersionedTransaction;
 
 pub const PROGRAM_BYTES: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../target/deploy/spotboard.so"
+    "/../../target/deploy/adspaces.so"
 ));
 
 /// Lamports funded into every mint / token account. Far above rent-exemption.
 pub const RENT_FUNDING: u64 = 100_000_000;
 
 pub fn program_id() -> Pubkey {
-    spotboard::id()
+    adspaces::id()
 }
 
 pub fn token_program_id() -> Pubkey {
@@ -37,13 +37,13 @@ pub fn token_program_id() -> Pubkey {
 }
 
 pub fn config_pda() -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[spotboard::constants::CONFIG_SEED], &program_id())
+    Pubkey::find_program_address(&[adspaces::constants::CONFIG_SEED], &program_id())
 }
 
 pub fn authority_transfer_pda(config: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
-            spotboard::constants::AUTHORITY_TRANSFER_SEED,
+            adspaces::constants::AUTHORITY_TRANSFER_SEED,
             config.as_ref(),
         ],
         &program_id(),
@@ -53,7 +53,7 @@ pub fn authority_transfer_pda(config: &Pubkey) -> (Pubkey, u8) {
 pub fn listing_pda(seller: &Pubkey, slug_hash: &[u8; 16]) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
-            spotboard::constants::LISTING_SEED,
+            adspaces::constants::LISTING_SEED,
             seller.as_ref(),
             slug_hash.as_ref(),
         ],
@@ -63,28 +63,28 @@ pub fn listing_pda(seller: &Pubkey, slug_hash: &[u8; 16]) -> (Pubkey, u8) {
 
 pub fn spot_pda(listing: &Pubkey, index: u8) -> (Pubkey, u8) {
     Pubkey::find_program_address(
-        &[spotboard::constants::SPOT_SEED, listing.as_ref(), &[index]],
+        &[adspaces::constants::SPOT_SEED, listing.as_ref(), &[index]],
         &program_id(),
     )
 }
 
 pub fn vault_pda(spot: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
-        &[spotboard::constants::VAULT_SEED, spot.as_ref()],
+        &[adspaces::constants::VAULT_SEED, spot.as_ref()],
         &program_id(),
     )
 }
 
 pub fn proof_pda(spot: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
-        &[spotboard::constants::PROOF_SEED, spot.as_ref()],
+        &[adspaces::constants::PROOF_SEED, spot.as_ref()],
         &program_id(),
     )
 }
 
 pub fn dispute_pda(spot: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
-        &[spotboard::constants::DISPUTE_SEED, spot.as_ref()],
+        &[adspaces::constants::DISPUTE_SEED, spot.as_ref()],
         &program_id(),
     )
 }
@@ -156,12 +156,12 @@ impl Env {
         let treasury = Pubkey::new_unique();
         let initialize_config = new_ix(
             program_id(),
-            spotboard::instruction::InitializeConfig {
+            adspaces::instruction::InitializeConfig {
                 treasury,
-                fee_bps: spotboard::constants::PLATFORM_FEE_BPS,
+                fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
             }
             .data(),
-            spotboard::accounts::InitializeConfig {
+            adspaces::accounts::InitializeConfig {
                 authority: mint_authority.pubkey(),
                 config,
                 program: program_id(),
@@ -260,43 +260,43 @@ pub fn send(
     svm.send_transaction(tx)
 }
 
-pub fn read_listing(svm: &LiteSVM, listing: &Pubkey) -> spotboard::state::Listing {
+pub fn read_listing(svm: &LiteSVM, listing: &Pubkey) -> adspaces::state::Listing {
     let account = svm.get_account(listing).unwrap();
     let mut data: &[u8] = &account.data;
-    spotboard::state::Listing::try_deserialize(&mut data).unwrap()
+    adspaces::state::Listing::try_deserialize(&mut data).unwrap()
 }
 
-pub fn read_spot(svm: &LiteSVM, spot: &Pubkey) -> spotboard::state::Spot {
+pub fn read_spot(svm: &LiteSVM, spot: &Pubkey) -> adspaces::state::Spot {
     let account = svm.get_account(spot).unwrap();
     let mut data: &[u8] = &account.data;
-    spotboard::state::Spot::try_deserialize(&mut data).unwrap()
+    adspaces::state::Spot::try_deserialize(&mut data).unwrap()
 }
 
-pub fn read_proof(svm: &LiteSVM, proof: &Pubkey) -> spotboard::state::ProofRecord {
+pub fn read_proof(svm: &LiteSVM, proof: &Pubkey) -> adspaces::state::ProofRecord {
     let account = svm.get_account(proof).unwrap();
     let mut data: &[u8] = &account.data;
-    spotboard::state::ProofRecord::try_deserialize(&mut data).unwrap()
+    adspaces::state::ProofRecord::try_deserialize(&mut data).unwrap()
 }
 
-pub fn read_dispute(svm: &LiteSVM, dispute: &Pubkey) -> spotboard::state::DisputeRecord {
+pub fn read_dispute(svm: &LiteSVM, dispute: &Pubkey) -> adspaces::state::DisputeRecord {
     let account = svm.get_account(dispute).unwrap();
     let mut data: &[u8] = &account.data;
-    spotboard::state::DisputeRecord::try_deserialize(&mut data).unwrap()
+    adspaces::state::DisputeRecord::try_deserialize(&mut data).unwrap()
 }
 
-pub fn read_config(svm: &LiteSVM, config: &Pubkey) -> spotboard::state::Config {
+pub fn read_config(svm: &LiteSVM, config: &Pubkey) -> adspaces::state::Config {
     let account = svm.get_account(config).unwrap();
     let mut data: &[u8] = &account.data;
-    spotboard::state::Config::try_deserialize(&mut data).unwrap()
+    adspaces::state::Config::try_deserialize(&mut data).unwrap()
 }
 
 pub fn read_authority_transfer(
     svm: &LiteSVM,
     transfer: &Pubkey,
-) -> spotboard::state::AuthorityTransfer {
+) -> adspaces::state::AuthorityTransfer {
     let account = svm.get_account(transfer).unwrap();
     let mut data: &[u8] = &account.data;
-    spotboard::state::AuthorityTransfer::try_deserialize(&mut data).unwrap()
+    adspaces::state::AuthorityTransfer::try_deserialize(&mut data).unwrap()
 }
 
 pub fn token_balance(svm: &LiteSVM, account: &Pubkey) -> u64 {

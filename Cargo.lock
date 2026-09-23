@@ -3,6 +3,24 @@
 version = 4
 
 [[package]]
+name = "adspaces"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+ "base64 0.22.1",
+ "bincode",
+ "litesvm",
+ "solana-account",
+ "solana-keypair",
+ "solana-message",
+ "solana-signer",
+ "solana-transaction",
+ "spl-token",
+ "spl-token-interface",
+]
+
+[[package]]
 name = "aead"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4111,24 +4129,6 @@ dependencies = [
  "solana-zero-copy",
  "spl-discriminator",
  "thiserror 2.0.20",
-]
-
-[[package]]
-name = "spotboard"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "anchor-spl",
- "base64 0.22.1",
- "bincode",
- "litesvm",
- "solana-account",
- "solana-keypair",
- "solana-message",
- "solana-signer",
- "solana-transaction",
- "spl-token",
- "spl-token-interface",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 use crate::{
-    constants::CONFIG_SEED, error::SpotboardError, events::ConfigUpdated,
+    constants::CONFIG_SEED, error::AdspacesError, events::ConfigUpdated,
     instructions::initialize_config::validate_config, state::Config,
 };
 
@@ -12,7 +12,7 @@ pub struct UpdateConfig<'info> {
         mut,
         seeds = [CONFIG_SEED],
         bump = config.bump,
-        has_one = authority @ SpotboardError::Unauthorized,
+        has_one = authority @ AdspacesError::Unauthorized,
     )]
     pub config: Account<'info, Config>,
 }

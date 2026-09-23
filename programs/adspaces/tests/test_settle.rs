@@ -13,9 +13,9 @@ use common::*;
 
 const PRICE: u64 = 150_000_000; // 150 USDC
 const FEE_BPS: u128 = 250;
-const PROOF_URI: &str = "ipfs://spotboard-proof-test";
-const DISPUTE_URI: &str = "ipfs://spotboard-dispute-test";
-const DECISION_URI: &str = "ipfs://spotboard-decision-test";
+const PROOF_URI: &str = "ipfs://adspaces-proof-test";
+const DISPUTE_URI: &str = "ipfs://adspaces-dispute-test";
+const DECISION_URI: &str = "ipfs://adspaces-decision-test";
 
 fn assert_event<E: Event>(meta: &litesvm::types::TransactionMetadata, event: &E) {
     let encoded = base64::engine::general_purpose::STANDARD.encode(event.data());
@@ -34,10 +34,10 @@ fn create_fixed_listing(
     let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::CreateListing {
+        adspaces::instruction::CreateListing {
             slug_hash,
-            metadata_uri: "https://spotboard.test/api/listings/settle".to_string(),
-            mode: spotboard::constants::MODE_FIXED,
+            metadata_uri: "https://adspaces.test/api/listings/settle".to_string(),
+            mode: adspaces::constants::MODE_FIXED,
             deadline,
             artwork_close: deadline,
             delivery_deadline: deadline + 7 * 86_400,
@@ -45,7 +45,7 @@ fn create_fixed_listing(
             double_up: false,
         }
         .data(),
-        spotboard::accounts::CreateListing {
+        adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             listing,
             config: env.config,
@@ -64,8 +64,8 @@ fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) ->
     let (vault, _) = vault_pda(&spot);
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::AddSpot { price }.data(),
-        spotboard::accounts::AddSpot {
+        adspaces::instruction::AddSpot { price }.data(),
+        adspaces::accounts::AddSpot {
             seller: seller.pubkey(),
             listing: *listing,
             spot,
@@ -112,8 +112,8 @@ fn claim(
 ) {
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::ClaimSpot {}.data(),
-        spotboard::accounts::ClaimSpot {
+        adspaces::instruction::ClaimSpot {}.data(),
+        adspaces::accounts::ClaimSpot {
             buyer: buyer.pubkey(),
             listing: *listing,
             spot: *spot,
@@ -140,8 +140,8 @@ fn withdraw(
 ) -> litesvm::types::TransactionResult {
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::WithdrawSeller {}.data(),
-        spotboard::accounts::WithdrawSeller {
+        adspaces::instruction::WithdrawSeller {}.data(),
+        adspaces::accounts::WithdrawSeller {
             caller: caller.pubkey(),
             listing: *listing,
             seller: *seller,
@@ -169,8 +169,8 @@ fn refund(
 ) -> litesvm::types::TransactionResult {
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::RefundSpot {}.data(),
-        spotboard::accounts::RefundSpot {
+        adspaces::instruction::RefundSpot {}.data(),
+        adspaces::accounts::RefundSpot {
             caller: caller.pubkey(),
             listing: *listing,
             seller: *seller,
@@ -196,12 +196,12 @@ fn try_submit_proof_with_uri(
     let (proof, _) = proof_pda(spot);
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::SubmitProof {
+        adspaces::instruction::SubmitProof {
             proof_hash: [7; 32],
             proof_uri: proof_uri.to_string(),
         }
         .data(),
-        spotboard::accounts::SubmitProof {
+        adspaces::accounts::SubmitProof {
             seller: seller.pubkey(),
             listing: *listing,
             spot: *spot,
@@ -253,7 +253,7 @@ fn settle_balance(price: u64, donation: u64, slug_hash: [u8; 16]) -> (u64, u64) 
 
     env.warp_to_timestamp(now + 86_400);
     submit_proof(&mut env, &seller, &listing, &spot);
-    env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
+    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS);
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
     let treasury = env.treasury;
     let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
@@ -296,12 +296,12 @@ fn dispute_with_evidence(
     let (dispute, _) = dispute_pda(spot);
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::RaiseDispute {
+        adspaces::instruction::RaiseDispute {
             evidence_hash,
             evidence_uri: evidence_uri.to_string(),
         }
         .data(),
-        spotboard::accounts::RaiseDispute {
+        adspaces::accounts::RaiseDispute {
             buyer: buyer.pubkey(),
             listing: *listing,
             spot: *spot,
@@ -367,7 +367,7 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
     );
     assert_event(
         &proof_meta,
-        &spotboard::events::ProofSubmitted {
+        &adspaces::events::ProofSubmitted {
             listing,
             index: 0,
             proof,
@@ -376,7 +376,7 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
             submitted_at: read_spot(&env.svm, &spot).proof_submitted_at,
         },
     );
-    env.warp_to_timestamp(now + 37 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
+    env.warp_to_timestamp(now + 37 * 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS);
 
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
     let treasury = env.treasury;
@@ -403,7 +403,7 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
     assert_eq!(token_balance(&env.svm, &treasury_ata), expected_fee as u64);
     assert_eq!(
         read_spot(&env.svm, &spot).status,
-        spotboard::constants::SPOT_FINALIZED
+        adspaces::constants::SPOT_FINALIZED
     );
     assert!(env.svm.get_account(&vault).is_none());
 }
@@ -441,8 +441,8 @@ fn close_spot_reclaims_unfunded_vault() {
 
     let close = new_ix(
         program_id(),
-        spotboard::instruction::CloseSpot {}.data(),
-        spotboard::accounts::CloseSpot {
+        adspaces::instruction::CloseSpot {}.data(),
+        adspaces::accounts::CloseSpot {
             seller: seller.pubkey(),
             listing,
             spot,
@@ -454,7 +454,7 @@ fn close_spot_reclaims_unfunded_vault() {
     send(&mut env.svm, &[close], &seller, &[]).unwrap();
     assert_eq!(
         read_spot(&env.svm, &spot).status,
-        spotboard::constants::SPOT_CANCELLED
+        adspaces::constants::SPOT_CANCELLED
     );
     assert!(env.svm.get_account(&vault).is_none());
 }
@@ -473,8 +473,8 @@ fn close_funded_spot_fails() {
 
     let close = new_ix(
         program_id(),
-        spotboard::instruction::CloseSpot {}.data(),
-        spotboard::accounts::CloseSpot {
+        adspaces::instruction::CloseSpot {}.data(),
+        adspaces::accounts::CloseSpot {
             seller: seller.pubkey(),
             listing,
             spot,
@@ -523,7 +523,7 @@ fn seller_cancels_funded_spot_with_full_buyer_refund() {
     .unwrap();
     assert_event(
         &meta,
-        &spotboard::events::SpotRefunded {
+        &adspaces::events::SpotRefunded {
             listing,
             index: 0,
             buyer: buyer.pubkey(),
@@ -534,7 +534,7 @@ fn seller_cancels_funded_spot_with_full_buyer_refund() {
     assert_eq!(token_balance(&env.svm, &buyer_ata), PRICE);
     assert_eq!(
         read_spot(&env.svm, &spot).status,
-        spotboard::constants::SPOT_CANCELLED
+        adspaces::constants::SPOT_CANCELLED
     );
     assert!(env.svm.get_account(&vault).is_none());
 }
@@ -586,7 +586,7 @@ fn anyone_can_refund_missing_proof_after_delivery_deadline() {
     .unwrap();
     assert_event(
         &meta,
-        &spotboard::events::SpotRefunded {
+        &adspaces::events::SpotRefunded {
             listing,
             index: 0,
             buyer: buyer.pubkey(),
@@ -598,7 +598,7 @@ fn anyone_can_refund_missing_proof_after_delivery_deadline() {
     assert_eq!(token_balance(&env.svm, &wrong_ata), 0);
     assert_eq!(
         read_spot(&env.svm, &spot).status,
-        spotboard::constants::SPOT_CANCELLED
+        adspaces::constants::SPOT_CANCELLED
     );
     assert!(env.svm.get_account(&vault).is_none());
 }
@@ -631,7 +631,7 @@ fn third_party_cannot_refund_when_proof_exists() {
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
     assert_eq!(
         read_spot(&env.svm, &spot).status,
-        spotboard::constants::SPOT_FUNDED
+        adspaces::constants::SPOT_FUNDED
     );
 }
 
@@ -663,7 +663,7 @@ fn proof_and_review_are_required_before_payout() {
     submit_proof(&mut env, &seller, &listing, &spot);
     let caller = Keypair::new();
     env.svm.airdrop(&caller.pubkey(), 10_000_000_000).unwrap();
-    env.warp_to_timestamp(now + 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
+    env.warp_to_timestamp(now + 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS);
     assert!(withdraw(
         &mut env,
         &caller,
@@ -679,7 +679,7 @@ fn proof_and_review_are_required_before_payout() {
     env.svm
         .airdrop(&later_caller.pubkey(), 10_000_000_000)
         .unwrap();
-    env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS - 1);
+    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS - 1);
     assert!(withdraw(
         &mut env,
         &later_caller,
@@ -691,7 +691,7 @@ fn proof_and_review_are_required_before_payout() {
         &treasury_ata
     )
     .is_err());
-    env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
+    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS);
     assert!(dispute(&mut env, &buyer, &listing, &spot).is_err());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 }
@@ -713,14 +713,14 @@ fn only_winner_can_dispute_and_block_payout() {
     let stranger = Keypair::new();
     env.svm.airdrop(&stranger.pubkey(), 10_000_000_000).unwrap();
     assert!(dispute(&mut env, &stranger, &listing, &spot).is_err());
-    env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS / 2);
+    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS / 2);
     for (hash, uri) in [
         ([0; 32], "".to_string()),
         ([9; 32], "".to_string()),
         ([0; 32], DISPUTE_URI.to_string()),
         (
             [9; 32],
-            "x".repeat(spotboard::constants::DISPUTE_URI_MAX_LEN + 1),
+            "x".repeat(adspaces::constants::DISPUTE_URI_MAX_LEN + 1),
         ),
     ] {
         assert!(dispute_with_evidence(&mut env, &buyer, &listing, &spot, hash, &uri).is_err());
@@ -737,7 +737,7 @@ fn only_winner_can_dispute_and_block_payout() {
     assert_eq!(stored_dispute.evidence_uri, DISPUTE_URI);
     assert_event(
         &dispute_meta,
-        &spotboard::events::DisputeRaised {
+        &adspaces::events::DisputeRaised {
             listing,
             index: 0,
             dispute: dispute_record,
@@ -747,7 +747,7 @@ fn only_winner_can_dispute_and_block_payout() {
             raised_at: env.clock().unix_timestamp,
         },
     );
-    env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
+    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS);
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
     let treasury = env.treasury;
     let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
@@ -764,7 +764,7 @@ fn only_winner_can_dispute_and_block_payout() {
     .is_err());
     assert_eq!(
         read_spot(&env.svm, &spot).status,
-        spotboard::constants::SPOT_DISPUTED
+        adspaces::constants::SPOT_DISPUTED
     );
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 
@@ -796,13 +796,13 @@ fn only_winner_can_dispute_and_block_payout() {
     let (dispute_record, _) = dispute_pda(&spot);
     let resolve = new_ix(
         program_id(),
-        spotboard::instruction::ResolveDispute {
+        adspaces::instruction::ResolveDispute {
             seller_share_bps: 5_000,
             decision_hash: [7; 32],
             decision_uri: DECISION_URI.to_string(),
         }
         .data(),
-        spotboard::accounts::ResolveDispute {
+        adspaces::accounts::ResolveDispute {
             resolver,
             config: env.config,
             listing,
@@ -836,7 +836,7 @@ fn only_winner_can_dispute_and_block_payout() {
     assert_eq!(token_balance(&env.svm, &attacker_ata), 0);
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
     let mut invalid_decision = resolve.clone();
-    invalid_decision.data = spotboard::instruction::ResolveDispute {
+    invalid_decision.data = adspaces::instruction::ResolveDispute {
         seller_share_bps: 5_000,
         decision_hash: [0; 32],
         decision_uri: String::new(),
@@ -848,11 +848,11 @@ fn only_winner_can_dispute_and_block_payout() {
         ([0; 32], DECISION_URI.to_string()),
         (
             [7; 32],
-            "x".repeat(spotboard::constants::DISPUTE_URI_MAX_LEN + 1),
+            "x".repeat(adspaces::constants::DISPUTE_URI_MAX_LEN + 1),
         ),
     ] {
         let mut invalid_decision = resolve.clone();
-        invalid_decision.data = spotboard::instruction::ResolveDispute {
+        invalid_decision.data = adspaces::instruction::ResolveDispute {
             seller_share_bps: 5_000,
             decision_hash: hash,
             decision_uri: uri,
@@ -874,7 +874,7 @@ fn only_winner_can_dispute_and_block_payout() {
     assert_eq!(stored_dispute.fee, fee as u64);
     assert_event(
         &resolve_meta,
-        &spotboard::events::DisputeResolved {
+        &adspaces::events::DisputeResolved {
             listing,
             index: 0,
             dispute: dispute_record,
@@ -908,7 +908,7 @@ fn missing_proof_dispute_waits_for_delivery_deadline() {
     assert!(dispute(&mut env, &buyer, &listing, &spot).is_err());
     assert_eq!(
         read_spot(&env.svm, &spot).status,
-        spotboard::constants::SPOT_FUNDED
+        adspaces::constants::SPOT_FUNDED
     );
     env.svm.expire_blockhash();
     env.warp_to_timestamp(now + 8 * 86_400);
@@ -917,7 +917,7 @@ fn missing_proof_dispute_waits_for_delivery_deadline() {
     assert!(!read_dispute(&env.svm, &dispute_record).proof_submitted);
     assert_event(
         &dispute_meta,
-        &spotboard::events::DisputeRaised {
+        &adspaces::events::DisputeRaised {
             listing,
             index: 0,
             dispute: dispute_record,
@@ -929,7 +929,7 @@ fn missing_proof_dispute_waits_for_delivery_deadline() {
     );
     assert_eq!(
         read_spot(&env.svm, &spot).status,
-        spotboard::constants::SPOT_DISPUTED
+        adspaces::constants::SPOT_DISPUTED
     );
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 }

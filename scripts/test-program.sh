@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
-wallet="${SPOTBOARD_TEST_WALLET:-$HOME/.config/solana/id.json}"
+wallet="${ADSPACES_TEST_WALLET:-$HOME/.config/solana/id.json}"
 validator_url="http://127.0.0.1:8899"
 
 cd "$repo_root"
@@ -17,11 +17,11 @@ if solana -u "$validator_url" cluster-version >/dev/null 2>&1; then
 fi
 
 bash "$script_dir/build-program.sh"
-ledger="$(mktemp -d /tmp/spotboard-validator.XXXXXX)"
+ledger="$(mktemp -d /tmp/adspaces-validator.XXXXXX)"
 readonly ledger
 solana-test-validator --quiet --ledger "$ledger" \
   --upgradeable-program 6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW \
-  target/deploy/spotboard.so "$wallet" &
+  target/deploy/adspaces.so "$wallet" &
 validator_pid=$!
 cleanup() {
   kill "$validator_pid" 2>/dev/null || true

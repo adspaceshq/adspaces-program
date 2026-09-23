@@ -1,13 +1,13 @@
 [package]
-name = "spotboard"
+name = "adspaces"
 version = "0.1.0"
-description = "Spotboard peer-to-peer ad-space marketplace: fixed-price claims and auctions escrowed in USDC"
+description = "Adspaces peer-to-peer ad-space marketplace: fixed-price claims and auctions escrowed in USDC"
 edition.workspace = true
 rust-version.workspace = true
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "spotboard"
+name = "adspaces"
 
 [features]
 default = []

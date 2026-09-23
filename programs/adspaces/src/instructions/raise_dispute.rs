@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::{
     constants::*,
-    error::SpotboardError,
+    error::AdspacesError,
     events::DisputeRaised,
     state::{DisputeRecord, Listing, Spot},
 };
@@ -20,8 +20,8 @@ pub struct RaiseDispute<'info> {
         mut,
         seeds = [SPOT_SEED, listing.key().as_ref(), &[spot.index]],
         bump = spot.bump,
-        constraint = spot.listing == listing.key() @ SpotboardError::Unauthorized,
-        constraint = spot.status == SPOT_FUNDED @ SpotboardError::SpotNotFunded,
+        constraint = spot.listing == listing.key() @ AdspacesError::Unauthorized,
+        constraint = spot.status == SPOT_FUNDED @ AdspacesError::SpotNotFunded,
     )]
     pub spot: Account<'info, Spot>,
     #[account(
@@ -48,12 +48,12 @@ pub fn handle_raise_dispute(
     };
     require!(
         winner == ctx.accounts.buyer.key(),
-        SpotboardError::NotWinningBuyer
+        AdspacesError::NotWinningBuyer
     );
     let now = Clock::get()?.unix_timestamp;
     require!(
         now >= ctx.accounts.listing.delivery_deadline,
-        SpotboardError::DeliveryDeadlinePending
+        AdspacesError::DeliveryDeadlinePending
     );
     if spot.proof_submitted_at > 0 {
         let review_end = ctx
@@ -61,8 +61,8 @@ pub fn handle_raise_dispute(
             .listing
             .delivery_deadline
             .checked_add(REVIEW_WINDOW_SECONDS)
-            .ok_or(SpotboardError::MathOverflow)?;
-        require!(now < review_end, SpotboardError::ReviewWindowClosed);
+            .ok_or(AdspacesError::MathOverflow)?;
+        require!(now < review_end, AdspacesError::ReviewWindowClosed);
     }
     let proof_submitted = spot.proof_submitted_at > 0;
     let has_evidence = evidence_hash != [0; 32];
@@ -70,7 +70,7 @@ pub fn handle_raise_dispute(
         has_evidence != evidence_uri.is_empty()
             && evidence_uri.len() <= DISPUTE_URI_MAX_LEN
             && (!proof_submitted || has_evidence),
-        SpotboardError::InvalidDisputeEvidence
+        AdspacesError::InvalidDisputeEvidence
     );
     let dispute = &mut ctx.accounts.dispute;
     dispute.spot = spot.key();

@@ -3,7 +3,7 @@ use anchor_spl::token::Mint;
 
 use crate::{
     constants::*,
-    error::SpotboardError,
+    error::AdspacesError,
     events::ListingCreated,
     state::{Config, Listing},
 };
@@ -24,7 +24,7 @@ pub struct CreateListing<'info> {
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Account<'info, Config>,
     #[account(
-        constraint = usdc_mint.key() == config.payment_mint @ SpotboardError::InvalidMint
+        constraint = usdc_mint.key() == config.payment_mint @ AdspacesError::InvalidMint
     )]
     pub usdc_mint: Account<'info, Mint>,
     pub system_program: Program<'info, System>,
@@ -44,26 +44,26 @@ pub fn handle_create_listing(
 ) -> Result<()> {
     require!(
         mode == MODE_FIXED || mode == MODE_AUCTION,
-        SpotboardError::InvalidMode
+        AdspacesError::InvalidMode
     );
     require!(
         metadata_uri.len() <= METADATA_URI_MAX_LEN,
-        SpotboardError::MetadataUriTooLong
+        AdspacesError::MetadataUriTooLong
     );
 
     let now = Clock::get()?.unix_timestamp;
-    require!(deadline > now, SpotboardError::InvalidDeadline);
+    require!(deadline > now, AdspacesError::InvalidDeadline);
     require!(
         artwork_close >= deadline,
-        SpotboardError::InvalidArtworkClose
+        AdspacesError::InvalidArtworkClose
     );
     require!(
         delivery_deadline > artwork_close,
-        SpotboardError::InvalidDeliveryDeadline
+        AdspacesError::InvalidDeliveryDeadline
     );
 
     if mode == MODE_AUCTION && !double_up {
-        require!(min_increment > 0, SpotboardError::InvalidMinIncrement);
+        require!(min_increment > 0, AdspacesError::InvalidMinIncrement);
     }
 
     let listing = &mut ctx.accounts.listing;

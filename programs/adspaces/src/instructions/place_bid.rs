@@ -3,7 +3,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount};
 
 use crate::{
     constants::*,
-    error::SpotboardError,
+    error::AdspacesError,
     events::{BidPlaced, BidRefunded},
     state::{Listing, Spot},
 };
@@ -15,23 +15,23 @@ pub struct PlaceBid<'info> {
     #[account(
         seeds = [LISTING_SEED, listing.seller.as_ref(), listing.slug_hash.as_ref()],
         bump = listing.bump,
-        constraint = listing.status == LISTING_OPEN @ SpotboardError::ListingNotOpen,
-        constraint = listing.mode == MODE_AUCTION @ SpotboardError::WrongMode,
+        constraint = listing.status == LISTING_OPEN @ AdspacesError::ListingNotOpen,
+        constraint = listing.mode == MODE_AUCTION @ AdspacesError::WrongMode,
     )]
     pub listing: Account<'info, Listing>,
     #[account(
         mut,
         seeds = [SPOT_SEED, listing.key().as_ref(), &[spot.index]],
         bump = spot.bump,
-        constraint = spot.listing == listing.key() @ SpotboardError::Unauthorized,
-        constraint = spot.status == SPOT_OPEN || spot.status == SPOT_FUNDED @ SpotboardError::SpotNotOpen,
+        constraint = spot.listing == listing.key() @ AdspacesError::Unauthorized,
+        constraint = spot.status == SPOT_OPEN || spot.status == SPOT_FUNDED @ AdspacesError::SpotNotOpen,
     )]
     pub spot: Account<'info, Spot>,
     #[account(
         mut,
-        constraint = vault.key() == spot.vault @ SpotboardError::Unauthorized,
-        constraint = vault.mint == listing.mint @ SpotboardError::InvalidMint,
-        constraint = vault.owner == spot.key() @ SpotboardError::Unauthorized,
+        constraint = vault.key() == spot.vault @ AdspacesError::Unauthorized,
+        constraint = vault.mint == listing.mint @ AdspacesError::InvalidMint,
+        constraint = vault.owner == spot.key() @ AdspacesError::Unauthorized,
     )]
     pub vault: Account<'info, TokenAccount>,
     #[account(
@@ -45,7 +45,7 @@ pub struct PlaceBid<'info> {
     #[account(mut)]
     pub prev_bidder_ata: Option<Account<'info, TokenAccount>>,
     #[account(
-        constraint = usdc_mint.key() == listing.mint @ SpotboardError::InvalidMint
+        constraint = usdc_mint.key() == listing.mint @ AdspacesError::InvalidMint
     )]
     pub usdc_mint: Account<'info, Mint>,
     pub token_program: Program<'info, Token>,
@@ -55,7 +55,7 @@ pub fn handle_place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     require!(
         now < ctx.accounts.listing.deadline,
-        SpotboardError::ListingClosed
+        AdspacesError::ListingClosed
     );
 
     let current_bid = ctx.accounts.spot.current_bid;
@@ -64,18 +64,18 @@ pub fn handle_place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
     if current_bidder == Pubkey::default() {
         require!(
             amount >= ctx.accounts.spot.price,
-            SpotboardError::FirstBidTooLow
+            AdspacesError::FirstBidTooLow
         );
     } else if ctx.accounts.listing.double_up {
         let doubled = current_bid
             .checked_mul(2)
-            .ok_or(SpotboardError::MathOverflow)?;
-        require!(amount >= doubled, SpotboardError::BidMustDouble);
+            .ok_or(AdspacesError::MathOverflow)?;
+        require!(amount >= doubled, AdspacesError::BidMustDouble);
     } else {
         let minimum = current_bid
             .checked_add(ctx.accounts.listing.min_increment)
-            .ok_or(SpotboardError::MathOverflow)?;
-        require!(amount >= minimum, SpotboardError::BidTooLow);
+            .ok_or(AdspacesError::MathOverflow)?;
+        require!(amount >= minimum, AdspacesError::BidTooLow);
     }
 
     token::transfer(
@@ -95,12 +95,12 @@ pub fn handle_place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
             .accounts
             .prev_bidder_ata
             .as_ref()
-            .ok_or(SpotboardError::MissingRefundAccount)?;
+            .ok_or(AdspacesError::MissingRefundAccount)?;
         require!(
             prev.mint == ctx.accounts.listing.mint,
-            SpotboardError::InvalidMint
+            AdspacesError::InvalidMint
         );
-        require!(prev.owner == current_bidder, SpotboardError::Unauthorized);
+        require!(prev.owner == current_bidder, AdspacesError::Unauthorized);
 
         let listing_key = ctx.accounts.listing.key();
         let spot_index = ctx.accounts.spot.index;

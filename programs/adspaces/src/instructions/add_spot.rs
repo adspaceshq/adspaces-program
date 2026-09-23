@@ -3,7 +3,7 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 
 use crate::{
     constants::*,
-    error::SpotboardError,
+    error::AdspacesError,
     events::SpotAdded,
     state::{Listing, Spot},
 };
@@ -16,8 +16,8 @@ pub struct AddSpot<'info> {
         mut,
         seeds = [LISTING_SEED, seller.key().as_ref(), listing.slug_hash.as_ref()],
         bump = listing.bump,
-        has_one = seller @ SpotboardError::Unauthorized,
-        constraint = listing.status == LISTING_OPEN @ SpotboardError::ListingNotOpen,
+        has_one = seller @ AdspacesError::Unauthorized,
+        constraint = listing.status == LISTING_OPEN @ AdspacesError::ListingNotOpen,
     )]
     pub listing: Account<'info, Listing>,
     #[account(
@@ -38,7 +38,7 @@ pub struct AddSpot<'info> {
     )]
     pub vault: Account<'info, TokenAccount>,
     #[account(
-        constraint = usdc_mint.key() == listing.mint @ SpotboardError::InvalidMint
+        constraint = usdc_mint.key() == listing.mint @ AdspacesError::InvalidMint
     )]
     pub usdc_mint: Account<'info, Mint>,
     pub system_program: Program<'info, System>,
@@ -49,15 +49,15 @@ pub struct AddSpot<'info> {
 pub fn handle_add_spot(ctx: Context<AddSpot>, price: u64) -> Result<()> {
     require!(
         Clock::get()?.unix_timestamp < ctx.accounts.listing.deadline,
-        SpotboardError::ListingClosed
+        AdspacesError::ListingClosed
     );
 
     let listing = &mut ctx.accounts.listing;
     require!(
         listing.spot_count < MAX_SPOTS_PER_LISTING,
-        SpotboardError::TooManySpots
+        AdspacesError::TooManySpots
     );
-    require!(price > 0, SpotboardError::ZeroPrice);
+    require!(price > 0, AdspacesError::ZeroPrice);
 
     let index = listing.spot_count;
     let spot = &mut ctx.accounts.spot;
@@ -74,7 +74,7 @@ pub fn handle_add_spot(ctx: Context<AddSpot>, price: u64) -> Result<()> {
     spot.proof_hash = [0; 32];
     spot.proof_submitted_at = 0;
 
-    listing.spot_count = index.checked_add(1).ok_or(SpotboardError::MathOverflow)?;
+    listing.spot_count = index.checked_add(1).ok_or(AdspacesError::MathOverflow)?;
 
     emit!(SpotAdded {
         listing: listing.key(),

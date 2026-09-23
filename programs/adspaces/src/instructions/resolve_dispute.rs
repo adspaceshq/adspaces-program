@@ -3,7 +3,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount};
 
 use crate::{
     constants::*,
-    error::SpotboardError,
+    error::AdspacesError,
     events::DisputeResolved,
     state::{Config, DisputeRecord, Listing, Spot},
 };
@@ -14,7 +14,7 @@ pub struct ResolveDispute<'info> {
     #[account(
         seeds = [CONFIG_SEED],
         bump = config.bump,
-        constraint = config.authority == resolver.key() @ SpotboardError::Unauthorized,
+        constraint = config.authority == resolver.key() @ AdspacesError::Unauthorized,
     )]
     pub config: Account<'info, Config>,
     #[account(
@@ -26,41 +26,41 @@ pub struct ResolveDispute<'info> {
         mut,
         seeds = [SPOT_SEED, listing.key().as_ref(), &[spot.index]],
         bump = spot.bump,
-        constraint = spot.listing == listing.key() @ SpotboardError::Unauthorized,
-        constraint = spot.status == SPOT_DISPUTED @ SpotboardError::SpotNotFunded,
+        constraint = spot.listing == listing.key() @ AdspacesError::Unauthorized,
+        constraint = spot.status == SPOT_DISPUTED @ AdspacesError::SpotNotFunded,
     )]
     pub spot: Box<Account<'info, Spot>>,
     #[account(
         mut,
         seeds = [DISPUTE_SEED, spot.key().as_ref()],
         bump = dispute.bump,
-        constraint = dispute.spot == spot.key() @ SpotboardError::Unauthorized,
+        constraint = dispute.spot == spot.key() @ AdspacesError::Unauthorized,
     )]
     pub dispute: Box<Account<'info, DisputeRecord>>,
     #[account(
         mut,
-        constraint = vault.key() == spot.vault @ SpotboardError::Unauthorized,
-        constraint = vault.mint == listing.mint @ SpotboardError::InvalidMint,
-        constraint = vault.owner == spot.key() @ SpotboardError::Unauthorized,
+        constraint = vault.key() == spot.vault @ AdspacesError::Unauthorized,
+        constraint = vault.mint == listing.mint @ AdspacesError::InvalidMint,
+        constraint = vault.owner == spot.key() @ AdspacesError::Unauthorized,
     )]
     pub vault: Box<Account<'info, TokenAccount>>,
     #[account(mut, token::mint = usdc_mint, token::authority = seller)]
     pub seller_ata: Box<Account<'info, TokenAccount>>,
-    #[account(mut, address = listing.seller @ SpotboardError::Unauthorized)]
+    #[account(mut, address = listing.seller @ AdspacesError::Unauthorized)]
     pub seller: SystemAccount<'info>,
     #[account(
         mut,
-        constraint = buyer_ata.owner == if listing.mode == MODE_FIXED { spot.buyer } else { spot.current_bidder } @ SpotboardError::NotWinningBuyer,
-        constraint = buyer_ata.mint == listing.mint @ SpotboardError::InvalidMint,
+        constraint = buyer_ata.owner == if listing.mode == MODE_FIXED { spot.buyer } else { spot.current_bidder } @ AdspacesError::NotWinningBuyer,
+        constraint = buyer_ata.mint == listing.mint @ AdspacesError::InvalidMint,
     )]
     pub buyer_ata: Box<Account<'info, TokenAccount>>,
     #[account(
         mut,
-        constraint = treasury_ata.owner == listing.treasury @ SpotboardError::Unauthorized,
-        constraint = treasury_ata.mint == listing.mint @ SpotboardError::InvalidMint,
+        constraint = treasury_ata.owner == listing.treasury @ AdspacesError::Unauthorized,
+        constraint = treasury_ata.mint == listing.mint @ AdspacesError::InvalidMint,
     )]
     pub treasury_ata: Box<Account<'info, TokenAccount>>,
-    #[account(constraint = usdc_mint.key() == listing.mint @ SpotboardError::InvalidMint)]
+    #[account(constraint = usdc_mint.key() == listing.mint @ AdspacesError::InvalidMint)]
     pub usdc_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
 }
@@ -71,23 +71,23 @@ pub fn handle_resolve_dispute(
     decision_hash: [u8; 32],
     decision_uri: String,
 ) -> Result<()> {
-    require!(seller_share_bps <= 10_000, SpotboardError::InvalidFeeBps);
+    require!(seller_share_bps <= 10_000, AdspacesError::InvalidFeeBps);
     require!(
         decision_hash != [0; 32]
             && !decision_uri.is_empty()
             && decision_uri.len() <= DISPUTE_URI_MAX_LEN,
-        SpotboardError::InvalidDecisionEvidence
+        AdspacesError::InvalidDecisionEvidence
     );
     let balance = ctx.accounts.vault.amount;
-    require!(balance > 0, SpotboardError::SpotNotFunded);
+    require!(balance > 0, AdspacesError::SpotNotFunded);
     let seller_gross = ((balance as u128) * (seller_share_bps as u128) / 10_000) as u64;
     let buyer_refund = balance
         .checked_sub(seller_gross)
-        .ok_or(SpotboardError::MathOverflow)?;
+        .ok_or(AdspacesError::MathOverflow)?;
     let fee = ((seller_gross as u128) * (ctx.accounts.listing.fee_bps as u128) / 10_000) as u64;
     let seller_net = seller_gross
         .checked_sub(fee)
-        .ok_or(SpotboardError::MathOverflow)?;
+        .ok_or(AdspacesError::MathOverflow)?;
 
     let listing_key = ctx.accounts.listing.key();
     let index = ctx.accounts.spot.index;

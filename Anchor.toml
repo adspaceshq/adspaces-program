@@ -8,10 +8,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-spotboard = "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW"
+adspaces = "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW"
 
 [programs.devnet]
-spotboard = "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW"
+adspaces = "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW"
 
 [provider]
 cluster = "localnet"

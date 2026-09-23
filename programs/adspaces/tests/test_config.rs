@@ -16,8 +16,8 @@ fn update_config(
 ) -> litesvm::types::TransactionResult {
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::UpdateConfig { treasury, fee_bps }.data(),
-        spotboard::accounts::UpdateConfig {
+        adspaces::instruction::UpdateConfig { treasury, fee_bps }.data(),
+        adspaces::accounts::UpdateConfig {
             authority: authority.pubkey(),
             config: env.config,
         }
@@ -35,12 +35,12 @@ fn copy_keypair(keypair: &Keypair) -> Keypair {
 fn initialize_config(env: &mut Env, authority: &Keypair) -> litesvm::types::TransactionResult {
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::InitializeConfig {
+        adspaces::instruction::InitializeConfig {
             treasury: env.treasury,
-            fee_bps: spotboard::constants::PLATFORM_FEE_BPS,
+            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
         }
         .data(),
-        spotboard::accounts::InitializeConfig {
+        adspaces::accounts::InitializeConfig {
             authority: authority.pubkey(),
             config: env.config,
             program: program_id(),
@@ -62,8 +62,8 @@ fn propose_authority(
     let (transfer, _) = authority_transfer_pda(&env.config);
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::ProposeConfigAuthority { proposed_authority }.data(),
-        spotboard::accounts::ProposeConfigAuthority {
+        adspaces::instruction::ProposeConfigAuthority { proposed_authority }.data(),
+        adspaces::accounts::ProposeConfigAuthority {
             authority: authority.pubkey(),
             config: env.config,
             transfer,
@@ -83,8 +83,8 @@ fn accept_authority(
     let (transfer, _) = authority_transfer_pda(&env.config);
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::AcceptConfigAuthority {}.data(),
-        spotboard::accounts::AcceptConfigAuthority {
+        adspaces::instruction::AcceptConfigAuthority {}.data(),
+        adspaces::accounts::AcceptConfigAuthority {
             proposed_authority: proposed_authority.pubkey(),
             config: env.config,
             transfer,
@@ -100,8 +100,8 @@ fn cancel_authority(env: &mut Env, authority: &Keypair) -> litesvm::types::Trans
     let (transfer, _) = authority_transfer_pda(&env.config);
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::CancelConfigAuthority {}.data(),
-        spotboard::accounts::CancelConfigAuthority {
+        adspaces::instruction::CancelConfigAuthority {}.data(),
+        adspaces::accounts::CancelConfigAuthority {
             authority: authority.pubkey(),
             config: env.config,
             transfer,
@@ -119,7 +119,7 @@ fn initializes_protocol_config() {
     assert_eq!(config.authority, env.mint_authority.pubkey());
     assert_eq!(config.payment_mint, env.usdc);
     assert_eq!(config.treasury, env.treasury);
-    assert_eq!(config.fee_bps, spotboard::constants::PLATFORM_FEE_BPS);
+    assert_eq!(config.fee_bps, adspaces::constants::PLATFORM_FEE_BPS);
 }
 
 #[test]
@@ -167,7 +167,7 @@ fn rejects_unauthorized_or_invalid_updates() {
 
     let config = read_config(&env.svm, &env.config);
     assert_eq!(config.treasury, env.treasury);
-    assert_eq!(config.fee_bps, spotboard::constants::PLATFORM_FEE_BPS);
+    assert_eq!(config.fee_bps, adspaces::constants::PLATFORM_FEE_BPS);
 }
 
 #[test]

@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::{
     constants::*,
-    error::SpotboardError,
+    error::AdspacesError,
     events::ProofSubmitted,
     state::{Listing, ProofRecord, Spot},
 };
@@ -14,15 +14,15 @@ pub struct SubmitProof<'info> {
     #[account(
         seeds = [LISTING_SEED, seller.key().as_ref(), listing.slug_hash.as_ref()],
         bump = listing.bump,
-        has_one = seller @ SpotboardError::Unauthorized,
+        has_one = seller @ AdspacesError::Unauthorized,
     )]
     pub listing: Account<'info, Listing>,
     #[account(
         mut,
         seeds = [SPOT_SEED, listing.key().as_ref(), &[spot.index]],
         bump = spot.bump,
-        constraint = spot.listing == listing.key() @ SpotboardError::Unauthorized,
-        constraint = spot.status == SPOT_FUNDED @ SpotboardError::SpotNotFunded,
+        constraint = spot.listing == listing.key() @ AdspacesError::Unauthorized,
+        constraint = spot.status == SPOT_FUNDED @ AdspacesError::SpotNotFunded,
     )]
     pub spot: Account<'info, Spot>,
     #[account(
@@ -44,21 +44,21 @@ pub fn handle_submit_proof(
     let now = Clock::get()?.unix_timestamp;
     require!(
         now >= ctx.accounts.listing.deadline,
-        SpotboardError::WithdrawTooEarly
+        AdspacesError::WithdrawTooEarly
     );
     require!(
         now < ctx.accounts.listing.delivery_deadline,
-        SpotboardError::ProofDeadlinePassed
+        AdspacesError::ProofDeadlinePassed
     );
-    require!(proof_hash != [0; 32], SpotboardError::InvalidProof);
+    require!(proof_hash != [0; 32], AdspacesError::InvalidProof);
     require!(
         !proof_uri.is_empty() && proof_uri.len() <= PROOF_URI_MAX_LEN,
-        SpotboardError::InvalidProofUri
+        AdspacesError::InvalidProofUri
     );
     let spot = &mut ctx.accounts.spot;
     require!(
         spot.proof_submitted_at == 0,
-        SpotboardError::ProofAlreadySubmitted
+        AdspacesError::ProofAlreadySubmitted
     );
     spot.proof_hash = proof_hash;
     spot.proof_submitted_at = now;

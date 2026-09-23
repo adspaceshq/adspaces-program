@@ -3,7 +3,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount};
 
 use crate::{
     constants::*,
-    error::SpotboardError,
+    error::AdspacesError,
     events::SpotClaimed,
     state::{Listing, Spot},
 };
@@ -15,23 +15,23 @@ pub struct ClaimSpot<'info> {
     #[account(
         seeds = [LISTING_SEED, listing.seller.as_ref(), listing.slug_hash.as_ref()],
         bump = listing.bump,
-        constraint = listing.status == LISTING_OPEN @ SpotboardError::ListingNotOpen,
-        constraint = listing.mode == MODE_FIXED @ SpotboardError::WrongMode,
+        constraint = listing.status == LISTING_OPEN @ AdspacesError::ListingNotOpen,
+        constraint = listing.mode == MODE_FIXED @ AdspacesError::WrongMode,
     )]
     pub listing: Account<'info, Listing>,
     #[account(
         mut,
         seeds = [SPOT_SEED, listing.key().as_ref(), &[spot.index]],
         bump = spot.bump,
-        constraint = spot.listing == listing.key() @ SpotboardError::Unauthorized,
-        constraint = spot.status == SPOT_OPEN @ SpotboardError::SpotNotOpen,
+        constraint = spot.listing == listing.key() @ AdspacesError::Unauthorized,
+        constraint = spot.status == SPOT_OPEN @ AdspacesError::SpotNotOpen,
     )]
     pub spot: Account<'info, Spot>,
     #[account(
         mut,
-        constraint = vault.key() == spot.vault @ SpotboardError::Unauthorized,
-        constraint = vault.mint == listing.mint @ SpotboardError::InvalidMint,
-        constraint = vault.owner == spot.key() @ SpotboardError::Unauthorized,
+        constraint = vault.key() == spot.vault @ AdspacesError::Unauthorized,
+        constraint = vault.mint == listing.mint @ AdspacesError::InvalidMint,
+        constraint = vault.owner == spot.key() @ AdspacesError::Unauthorized,
     )]
     pub vault: Account<'info, TokenAccount>,
     #[account(
@@ -41,7 +41,7 @@ pub struct ClaimSpot<'info> {
     )]
     pub buyer_ata: Account<'info, TokenAccount>,
     #[account(
-        constraint = usdc_mint.key() == listing.mint @ SpotboardError::InvalidMint
+        constraint = usdc_mint.key() == listing.mint @ AdspacesError::InvalidMint
     )]
     pub usdc_mint: Account<'info, Mint>,
     pub token_program: Program<'info, Token>,
@@ -51,7 +51,7 @@ pub fn handle_claim_spot(ctx: Context<ClaimSpot>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     require!(
         now < ctx.accounts.listing.deadline,
-        SpotboardError::ListingClosed
+        AdspacesError::ListingClosed
     );
 
     let price = ctx.accounts.spot.price;

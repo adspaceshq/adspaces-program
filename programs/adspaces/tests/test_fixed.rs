@@ -16,10 +16,10 @@ fn create_fixed_listing(env: &mut Env, seller: &Keypair, slug_hash: [u8; 16]) ->
     let now = env.clock().unix_timestamp;
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::CreateListing {
+        adspaces::instruction::CreateListing {
             slug_hash,
-            metadata_uri: "https://spotboard.test/api/listings/demo".to_string(),
-            mode: spotboard::constants::MODE_FIXED,
+            metadata_uri: "https://adspaces.test/api/listings/demo".to_string(),
+            mode: adspaces::constants::MODE_FIXED,
             deadline: now + 30 * 86_400,
             artwork_close: now + 30 * 86_400,
             delivery_deadline: now + 37 * 86_400,
@@ -27,7 +27,7 @@ fn create_fixed_listing(env: &mut Env, seller: &Keypair, slug_hash: [u8; 16]) ->
             double_up: false,
         }
         .data(),
-        spotboard::accounts::CreateListing {
+        adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             listing,
             config: env.config,
@@ -40,7 +40,7 @@ fn create_fixed_listing(env: &mut Env, seller: &Keypair, slug_hash: [u8; 16]) ->
 
     let stored = read_listing(&env.svm, &listing);
     assert_eq!(stored.seller, seller.pubkey());
-    assert_eq!(stored.mode, spotboard::constants::MODE_FIXED);
+    assert_eq!(stored.mode, adspaces::constants::MODE_FIXED);
     assert_eq!(stored.spot_count, 0);
     assert_eq!(stored.delivery_deadline, now + 37 * 86_400);
     listing
@@ -56,10 +56,10 @@ fn delivery_deadline_must_follow_artwork_close() {
     let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::CreateListing {
+        adspaces::instruction::CreateListing {
             slug_hash,
-            metadata_uri: "https://spotboard.test/listings/invalid-delivery".to_string(),
-            mode: spotboard::constants::MODE_FIXED,
+            metadata_uri: "https://adspaces.test/listings/invalid-delivery".to_string(),
+            mode: adspaces::constants::MODE_FIXED,
             deadline: now + 86_400,
             artwork_close: now + 2 * 86_400,
             delivery_deadline: now + 2 * 86_400,
@@ -67,7 +67,7 @@ fn delivery_deadline_must_follow_artwork_close() {
             double_up: false,
         }
         .data(),
-        spotboard::accounts::CreateListing {
+        adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             listing,
             config: env.config,
@@ -86,8 +86,8 @@ fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) ->
     let (vault, _) = vault_pda(&spot);
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::AddSpot { price }.data(),
-        spotboard::accounts::AddSpot {
+        adspaces::instruction::AddSpot { price }.data(),
+        adspaces::accounts::AddSpot {
             seller: seller.pubkey(),
             listing: *listing,
             spot,
@@ -103,7 +103,7 @@ fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) ->
 
     let stored = read_spot(&env.svm, &spot);
     assert_eq!(stored.price, price);
-    assert_eq!(stored.status, spotboard::constants::SPOT_OPEN);
+    assert_eq!(stored.status, adspaces::constants::SPOT_OPEN);
     (spot, vault)
 }
 
@@ -117,8 +117,8 @@ fn claim(
 ) {
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::ClaimSpot {}.data(),
-        spotboard::accounts::ClaimSpot {
+        adspaces::instruction::ClaimSpot {}.data(),
+        adspaces::accounts::ClaimSpot {
             buyer: buyer.pubkey(),
             listing: *listing,
             spot: *spot,
@@ -147,7 +147,7 @@ fn fixed_claim_moves_funds_into_vault() {
     claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
 
     let stored = read_spot(&env.svm, &spot);
-    assert_eq!(stored.status, spotboard::constants::SPOT_FUNDED);
+    assert_eq!(stored.status, adspaces::constants::SPOT_FUNDED);
     assert_eq!(stored.buyer, buyer.pubkey());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
     assert_eq!(token_balance(&env.svm, &buyer_ata), 1_000_000_000 - PRICE);
@@ -168,8 +168,8 @@ fn fixed_claim_twice_fails() {
     let (buyer2, buyer2_ata) = env.new_user(1_000_000_000);
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::ClaimSpot {}.data(),
-        spotboard::accounts::ClaimSpot {
+        adspaces::instruction::ClaimSpot {}.data(),
+        adspaces::accounts::ClaimSpot {
             buyer: buyer2.pubkey(),
             listing,
             spot,
@@ -197,8 +197,8 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
     let (bidder, bidder_ata) = env.new_user(1_000_000_000);
     let bid = new_ix(
         program_id(),
-        spotboard::instruction::PlaceBid { amount: PRICE }.data(),
-        spotboard::accounts::PlaceBid {
+        adspaces::instruction::PlaceBid { amount: PRICE }.data(),
+        adspaces::accounts::PlaceBid {
             bidder: bidder.pubkey(),
             listing,
             spot,
@@ -218,10 +218,10 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
     let (auction_listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
     let create = new_ix(
         program_id(),
-        spotboard::instruction::CreateListing {
+        adspaces::instruction::CreateListing {
             slug_hash,
-            metadata_uri: "https://spotboard.test/api/listings/auction".to_string(),
-            mode: spotboard::constants::MODE_AUCTION,
+            metadata_uri: "https://adspaces.test/api/listings/auction".to_string(),
+            mode: adspaces::constants::MODE_AUCTION,
             deadline: now + 30 * 86_400,
             artwork_close: now + 30 * 86_400,
             delivery_deadline: now + 37 * 86_400,
@@ -229,7 +229,7 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
             double_up: false,
         }
         .data(),
-        spotboard::accounts::CreateListing {
+        adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             listing: auction_listing,
             config: env.config,
@@ -243,8 +243,8 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
 
     let claim_ix = new_ix(
         program_id(),
-        spotboard::instruction::ClaimSpot {}.data(),
-        spotboard::accounts::ClaimSpot {
+        adspaces::instruction::ClaimSpot {}.data(),
+        adspaces::accounts::ClaimSpot {
             buyer: bidder.pubkey(),
             listing: auction_listing,
             spot: a_spot,
@@ -269,10 +269,10 @@ fn claim_after_deadline_fails() {
     let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
     let create = new_ix(
         program_id(),
-        spotboard::instruction::CreateListing {
+        adspaces::instruction::CreateListing {
             slug_hash,
-            metadata_uri: "https://spotboard.test/api/listings/flash".to_string(),
-            mode: spotboard::constants::MODE_FIXED,
+            metadata_uri: "https://adspaces.test/api/listings/flash".to_string(),
+            mode: adspaces::constants::MODE_FIXED,
             deadline: now + 10,
             artwork_close: now + 10,
             delivery_deadline: now + 20,
@@ -280,7 +280,7 @@ fn claim_after_deadline_fails() {
             double_up: false,
         }
         .data(),
-        spotboard::accounts::CreateListing {
+        adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             listing,
             config: env.config,
@@ -297,8 +297,8 @@ fn claim_after_deadline_fails() {
     let (buyer, buyer_ata) = env.new_user(1_000_000_000);
     let claim_ix = new_ix(
         program_id(),
-        spotboard::instruction::ClaimSpot {}.data(),
-        spotboard::accounts::ClaimSpot {
+        adspaces::instruction::ClaimSpot {}.data(),
+        adspaces::accounts::ClaimSpot {
             buyer: buyer.pubkey(),
             listing,
             spot,
@@ -326,8 +326,8 @@ fn add_spot_after_deadline_fails() {
     let (vault, _) = vault_pda(&spot);
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::AddSpot { price: PRICE }.data(),
-        spotboard::accounts::AddSpot {
+        adspaces::instruction::AddSpot { price: PRICE }.data(),
+        adspaces::accounts::AddSpot {
             seller: seller.pubkey(),
             listing,
             spot,

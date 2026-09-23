@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::{
     constants::{AUTHORITY_TRANSFER_SEED, CONFIG_SEED},
-    error::SpotboardError,
+    error::AdspacesError,
     events::{ConfigAuthorityAccepted, ConfigAuthorityCancelled, ConfigAuthorityProposed},
     state::{AuthorityTransfer, Config},
 };
@@ -14,7 +14,7 @@ pub struct ProposeConfigAuthority<'info> {
     #[account(
         seeds = [CONFIG_SEED],
         bump = config.bump,
-        has_one = authority @ SpotboardError::Unauthorized,
+        has_one = authority @ AdspacesError::Unauthorized,
     )]
     pub config: Account<'info, Config>,
     #[account(
@@ -35,7 +35,7 @@ pub fn handle_propose_config_authority(
     require!(
         proposed_authority != Pubkey::default()
             && proposed_authority != ctx.accounts.authority.key(),
-        SpotboardError::InvalidAuthorityTransfer
+        AdspacesError::InvalidAuthorityTransfer
     );
     let transfer = &mut ctx.accounts.transfer;
     transfer.config = ctx.accounts.config.key();
@@ -59,13 +59,13 @@ pub struct AcceptConfigAuthority<'info> {
         close = previous_authority,
         seeds = [AUTHORITY_TRANSFER_SEED, config.key().as_ref()],
         bump = transfer.bump,
-        constraint = transfer.config == config.key() @ SpotboardError::Unauthorized,
-        constraint = transfer.current_authority == config.authority @ SpotboardError::Unauthorized,
-        constraint = transfer.proposed_authority == proposed_authority.key() @ SpotboardError::Unauthorized,
+        constraint = transfer.config == config.key() @ AdspacesError::Unauthorized,
+        constraint = transfer.current_authority == config.authority @ AdspacesError::Unauthorized,
+        constraint = transfer.proposed_authority == proposed_authority.key() @ AdspacesError::Unauthorized,
     )]
     pub transfer: Account<'info, AuthorityTransfer>,
     /// CHECK: This is the stored current authority and only receives the closed PDA's rent.
-    #[account(mut, address = config.authority @ SpotboardError::Unauthorized)]
+    #[account(mut, address = config.authority @ AdspacesError::Unauthorized)]
     pub previous_authority: UncheckedAccount<'info>,
 }
 
@@ -87,7 +87,7 @@ pub struct CancelConfigAuthority<'info> {
     #[account(
         seeds = [CONFIG_SEED],
         bump = config.bump,
-        has_one = authority @ SpotboardError::Unauthorized,
+        has_one = authority @ AdspacesError::Unauthorized,
     )]
     pub config: Account<'info, Config>,
     #[account(
@@ -95,8 +95,8 @@ pub struct CancelConfigAuthority<'info> {
         close = authority,
         seeds = [AUTHORITY_TRANSFER_SEED, config.key().as_ref()],
         bump = transfer.bump,
-        constraint = transfer.config == config.key() @ SpotboardError::Unauthorized,
-        constraint = transfer.current_authority == authority.key() @ SpotboardError::Unauthorized,
+        constraint = transfer.config == config.key() @ AdspacesError::Unauthorized,
+        constraint = transfer.current_authority == authority.key() @ AdspacesError::Unauthorized,
     )]
     pub transfer: Account<'info, AuthorityTransfer>,
 }

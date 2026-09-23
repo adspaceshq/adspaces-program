@@ -24,10 +24,10 @@ fn create_auction_listing(
     let now = env.clock().unix_timestamp;
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::CreateListing {
+        adspaces::instruction::CreateListing {
             slug_hash,
-            metadata_uri: "https://spotboard.test/api/listings/auction".to_string(),
-            mode: spotboard::constants::MODE_AUCTION,
+            metadata_uri: "https://adspaces.test/api/listings/auction".to_string(),
+            mode: adspaces::constants::MODE_AUCTION,
             deadline: now + 30 * 86_400,
             artwork_close: now + 30 * 86_400,
             delivery_deadline: now + 37 * 86_400,
@@ -35,7 +35,7 @@ fn create_auction_listing(
             double_up,
         }
         .data(),
-        spotboard::accounts::CreateListing {
+        adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             listing,
             config: env.config,
@@ -50,8 +50,8 @@ fn create_auction_listing(
     let (vault, _) = vault_pda(&spot);
     let add = new_ix(
         program_id(),
-        spotboard::instruction::AddSpot { price: START }.data(),
-        spotboard::accounts::AddSpot {
+        adspaces::instruction::AddSpot { price: START }.data(),
+        adspaces::accounts::AddSpot {
             seller: seller.pubkey(),
             listing,
             spot,
@@ -107,8 +107,8 @@ fn bid(
 ) -> litesvm::types::TransactionResult {
     let ix = new_ix(
         program_id(),
-        spotboard::instruction::PlaceBid { amount }.data(),
-        spotboard::accounts::PlaceBid {
+        adspaces::instruction::PlaceBid { amount }.data(),
+        adspaces::accounts::PlaceBid {
             bidder: bidder.pubkey(),
             listing: *listing,
             spot: *spot,
@@ -308,12 +308,12 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
     let dispute_ix = |buyer: Pubkey| {
         new_ix(
             program_id(),
-            spotboard::instruction::RaiseDispute {
+            adspaces::instruction::RaiseDispute {
                 evidence_hash: [0; 32],
                 evidence_uri: String::new(),
             }
             .data(),
-            spotboard::accounts::RaiseDispute {
+            adspaces::accounts::RaiseDispute {
                 buyer,
                 listing,
                 spot,
@@ -327,7 +327,7 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
     send(&mut env.svm, &[dispute_ix(bob.pubkey())], &bob, &[]).unwrap();
     assert_eq!(
         read_spot(&env.svm, &spot).status,
-        spotboard::constants::SPOT_DISPUTED
+        adspaces::constants::SPOT_DISPUTED
     );
 
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
@@ -336,13 +336,13 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
     let (dispute_record, _) = dispute_pda(&spot);
     let resolve = new_ix(
         program_id(),
-        spotboard::instruction::ResolveDispute {
+        adspaces::instruction::ResolveDispute {
             seller_share_bps: 0,
             decision_hash: [7; 32],
             decision_uri: "ipfs://auction-refund-decision".to_string(),
         }
         .data(),
-        spotboard::accounts::ResolveDispute {
+        adspaces::accounts::ResolveDispute {
             resolver: env.mint_authority.pubkey(),
             config: env.config,
             listing,
@@ -367,7 +367,7 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
     assert_eq!(token_balance(&env.svm, &treasury_ata), 0);
     assert_eq!(
         read_spot(&env.svm, &spot).status,
-        spotboard::constants::SPOT_FINALIZED
+        adspaces::constants::SPOT_FINALIZED
     );
     assert!(env.svm.get_account(&vault).is_none());
 }
