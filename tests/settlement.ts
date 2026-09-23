@@ -9,14 +9,14 @@ import {
 } from "@solana/spl-token";
 import { expect } from "chai";
 
-import { Spotboard } from "../target/types/spotboard";
+import { Adspaces } from "../target/types/adspaces";
 import { ensureConfig } from "./helpers/setup";
 
 describe("spot settlement", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.spotboard as Program<Spotboard>;
+  const program = anchor.workspace.adspaces as Program<Adspaces>;
   const wallet = provider.wallet as anchor.Wallet;
   const buyer = anchor.web3.Keypair.generate();
   const caller = anchor.web3.Keypair.generate();
@@ -94,7 +94,7 @@ describe("spot settlement", () => {
     await program.methods
       .createListing(
         slugHash,
-        "https://spotboard.test/listings/anchor-settlement",
+        "https://adspaces.test/listings/anchor-settlement",
         0,
         new anchor.BN(now + 3600),
         new anchor.BN(now + 3600),

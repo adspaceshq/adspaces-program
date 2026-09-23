@@ -8,14 +8,14 @@ import {
 } from "@solana/spl-token";
 import { expect } from "chai";
 
-import { Spotboard } from "../target/types/spotboard";
+import { Adspaces } from "../target/types/adspaces";
 import { ensureConfig } from "./helpers/setup";
 
 describe("fixed-price spots", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.spotboard as Program<Spotboard>;
+  const program = anchor.workspace.adspaces as Program<Adspaces>;
   const wallet = provider.wallet as anchor.Wallet;
   const buyer = anchor.web3.Keypair.generate();
   const slugHash = Array.from({ length: 16 }, (_, index) => index + 1);
@@ -67,7 +67,7 @@ describe("fixed-price spots", () => {
     await program.methods
       .createListing(
         slugHash,
-        "https://spotboard.test/listings/anchor-fixed",
+        "https://adspaces.test/listings/anchor-fixed",
         0,
         new anchor.BN(now + 3600),
         new anchor.BN(now + 7200),

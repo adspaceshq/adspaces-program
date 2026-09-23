@@ -8,14 +8,14 @@ import {
 } from "@solana/spl-token";
 import { expect } from "chai";
 
-import { Spotboard } from "../target/types/spotboard";
+import { Adspaces } from "../target/types/adspaces";
 import { ensureConfig } from "./helpers/setup";
 
 describe("funded spot refunds", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.spotboard as Program<Spotboard>;
+  const program = anchor.workspace.adspaces as Program<Adspaces>;
   const wallet = provider.wallet as anchor.Wallet;
   const price = 150_000_000n;
   const [config] = anchor.web3.PublicKey.findProgramAddressSync(
@@ -73,7 +73,7 @@ describe("funded spot refunds", () => {
     await program.methods
       .createListing(
         slugHash,
-        "ipfs://spotboard-validator-refund",
+        "ipfs://adspaces-validator-refund",
         0,
         new anchor.BN(deadline),
         new anchor.BN(deadline),

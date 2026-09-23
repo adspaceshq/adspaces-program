@@ -8,14 +8,14 @@ import {
 } from "@solana/spl-token";
 import { expect } from "chai";
 
-import { Spotboard } from "../target/types/spotboard";
+import { Adspaces } from "../target/types/adspaces";
 import { ensureConfig } from "./helpers/setup";
 
 describe("auction spots", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.spotboard as Program<Spotboard>;
+  const program = anchor.workspace.adspaces as Program<Adspaces>;
   const wallet = provider.wallet as anchor.Wallet;
   const alice = anchor.web3.Keypair.generate();
   const bob = anchor.web3.Keypair.generate();
@@ -80,7 +80,7 @@ describe("auction spots", () => {
     await program.methods
       .createListing(
         slugHash,
-        "https://spotboard.test/listings/anchor-auction",
+        "https://adspaces.test/listings/anchor-auction",
         1,
         new anchor.BN(now + 3600),
         new anchor.BN(now + 7200),
@@ -231,7 +231,7 @@ describe("auction spots", () => {
     await program.methods
       .createListing(
         doubleSlug,
-        "https://spotboard.test/listings/anchor-double-up",
+        "https://adspaces.test/listings/anchor-double-up",
         1,
         new anchor.BN(now + 3600),
         new anchor.BN(now + 7200),

@@ -2,10 +2,10 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { createMint } from "@solana/spl-token";
 
-import { Spotboard } from "../../target/types/spotboard";
+import { Adspaces } from "../../target/types/adspaces";
 
 export async function ensureConfig(
-  program: Program<Spotboard>,
+  program: Program<Adspaces>,
   provider: anchor.AnchorProvider,
 ) {
   const [config] = anchor.web3.PublicKey.findProgramAddressSync(

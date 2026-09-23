@@ -2,14 +2,14 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { expect } from "chai";
 
-import { Spotboard } from "../target/types/spotboard";
+import { Adspaces } from "../target/types/adspaces";
 import { ensureConfig } from "./helpers/setup";
 
 describe("protocol config", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.spotboard as Program<Spotboard>;
+  const program = anchor.workspace.adspaces as Program<Adspaces>;
   const wallet = provider.wallet as anchor.Wallet;
   let config: anchor.web3.PublicKey;
   let paymentMint: anchor.web3.PublicKey;
