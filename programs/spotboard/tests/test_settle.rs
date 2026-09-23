@@ -227,6 +227,53 @@ fn submit_proof(env: &mut Env, seller: &Keypair, listing: &Pubkey, spot: &Pubkey
     try_submit_proof(env, seller, listing, spot).unwrap();
 }
 
+fn settle_balance(price: u64, donation: u64, slug_hash: [u8; 16]) -> (u64, u64) {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, slug_hash, now + 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, price);
+    let (buyer, buyer_ata) = env.new_user(price);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+
+    if donation > 0 {
+        let (donor, donor_ata) = env.new_user(donation);
+        let transfer = spl_token::instruction::transfer(
+            &token_program_id(),
+            &donor_ata,
+            &vault,
+            &donor.pubkey(),
+            &[],
+            donation,
+        )
+        .unwrap();
+        send(&mut env.svm, &[transfer], &donor, &[]).unwrap();
+    }
+
+    env.warp_to_timestamp(now + 86_400);
+    submit_proof(&mut env, &seller, &listing, &spot);
+    env.warp_to_timestamp(now + 8 * 86_400 + spotboard::constants::REVIEW_WINDOW_SECONDS);
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
+    let treasury = env.treasury;
+    let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
+    withdraw(
+        &mut env,
+        &seller,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &seller_ata,
+        &treasury_ata,
+    )
+    .unwrap();
+    (
+        token_balance(&env.svm, &seller_ata),
+        token_balance(&env.svm, &treasury_ata),
+    )
+}
+
 #[allow(clippy::result_large_err)]
 fn dispute(
     env: &mut Env,
@@ -359,6 +406,28 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
         spotboard::constants::SPOT_FINALIZED
     );
     assert!(env.svm.get_account(&vault).is_none());
+}
+
+#[test]
+fn settlement_handles_fee_rounding_and_maximum_balance() {
+    assert_eq!(settle_balance(1, 0, [32; 16]), (1, 0));
+
+    let maximum_fee = (u64::MAX as u128 * FEE_BPS / 10_000) as u64;
+    assert_eq!(
+        settle_balance(u64::MAX, 0, [33; 16]),
+        (u64::MAX - maximum_fee, maximum_fee)
+    );
+}
+
+#[test]
+fn settlement_accounts_for_tokens_sent_directly_to_vault() {
+    let donation = 7;
+    let balance = PRICE + donation;
+    let fee = (balance as u128 * FEE_BPS / 10_000) as u64;
+    assert_eq!(
+        settle_balance(PRICE, donation, [34; 16]),
+        (balance - fee, fee)
+    );
 }
 
 #[test]
