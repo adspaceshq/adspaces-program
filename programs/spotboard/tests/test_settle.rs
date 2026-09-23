@@ -753,6 +753,19 @@ fn only_winner_can_dispute_and_block_payout() {
     unauthorized.accounts[0].pubkey = stranger.pubkey();
     assert!(send(&mut env.svm, &[unauthorized], &stranger, &[]).is_err());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
+    let attacker_ata = empty_token_account(&mut env, &seller, &stranger.pubkey());
+    for destination in [seller_ata, buyer_ata, treasury_ata] {
+        let mut redirected = resolve.clone();
+        let account_index = redirected
+            .accounts
+            .iter()
+            .position(|account| account.pubkey == destination)
+            .unwrap();
+        redirected.accounts[account_index].pubkey = attacker_ata;
+        assert!(send(&mut env.svm, &[redirected], &env.mint_authority, &[]).is_err());
+    }
+    assert_eq!(token_balance(&env.svm, &attacker_ata), 0);
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
     let mut invalid_decision = resolve.clone();
     invalid_decision.data = spotboard::instruction::ResolveDispute {
         seller_share_bps: 5_000,
