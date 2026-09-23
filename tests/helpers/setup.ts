@@ -30,12 +30,17 @@ export async function ensureConfig(
       6,
     );
     const treasury = anchor.web3.Keypair.generate().publicKey;
+    const programAccount = await provider.connection.getAccountInfo(program.programId);
+    if (!programAccount) throw new Error("Program account is unavailable");
+    const programData = new anchor.web3.PublicKey(programAccount.data.subarray(4, 36));
 
     await program.methods
       .initializeConfig(treasury, 250)
       .accountsStrict({
         authority: wallet.publicKey,
         config,
+        program: program.programId,
+        programData,
         paymentMint,
         systemProgram: anchor.web3.SystemProgram.programId,
       })

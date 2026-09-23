@@ -17,6 +17,12 @@ pub struct InitializeConfig<'info> {
         bump,
     )]
     pub config: Account<'info, Config>,
+    #[account(constraint = program.programdata_address()? == Some(program_data.key()))]
+    pub program: Program<'info, crate::program::Spotboard>,
+    #[account(
+        constraint = program_data.upgrade_authority_address == Some(authority.key()) @ SpotboardError::InvalidConfigAuthority,
+    )]
+    pub program_data: Account<'info, ProgramData>,
     pub payment_mint: Account<'info, Mint>,
     pub system_program: Program<'info, System>,
 }

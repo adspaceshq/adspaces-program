@@ -2,6 +2,7 @@
 
 use anchor_lang::{
     solana_program::{
+        bpf_loader_upgradeable::{self, UpgradeableLoaderState},
         clock::Clock,
         instruction::{AccountMeta, Instruction},
         system_instruction, system_program,
@@ -93,17 +94,39 @@ pub struct Env {
     pub mint_authority: Keypair,
     pub usdc: Pubkey,
     pub config: Pubkey,
+    pub program_data: Pubkey,
     pub treasury: Pubkey,
 }
 
 impl Env {
     pub fn new() -> Self {
+        Self::setup(true)
+    }
+
+    pub fn uninitialized() -> Self {
+        Self::setup(false)
+    }
+
+    fn setup(should_initialize_config: bool) -> Self {
         let mut svm = LiteSVM::new().with_default_programs();
         svm.add_program(program_id(), PROGRAM_BYTES).unwrap();
 
         let mint_authority = Keypair::new();
         svm.airdrop(&mint_authority.pubkey(), 10_000_000_000)
             .unwrap();
+        let (program_data, _) =
+            Pubkey::find_program_address(&[program_id().as_ref()], &bpf_loader_upgradeable::ID);
+        let mut program_data_account = svm.get_account(&program_data).unwrap();
+        let metadata_len = UpgradeableLoaderState::size_of_programdata_metadata();
+        bincode::serialize_into(
+            &mut program_data_account.data[..metadata_len],
+            &UpgradeableLoaderState::ProgramData {
+                slot: 0,
+                upgrade_authority_address: Some(mint_authority.pubkey()),
+            },
+        )
+        .unwrap();
+        svm.set_account(program_data, program_data_account).unwrap();
 
         let usdc = Pubkey::new_unique();
         let mint = state::Mint {
@@ -141,18 +164,23 @@ impl Env {
             spotboard::accounts::InitializeConfig {
                 authority: mint_authority.pubkey(),
                 config,
+                program: program_id(),
+                program_data,
                 payment_mint: usdc,
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
         );
-        send(&mut svm, &[initialize_config], &mint_authority, &[]).unwrap();
+        if should_initialize_config {
+            send(&mut svm, &[initialize_config], &mint_authority, &[]).unwrap();
+        }
 
         Self {
             svm,
             mint_authority,
             usdc,
             config,
+            program_data,
             treasury,
         }
     }

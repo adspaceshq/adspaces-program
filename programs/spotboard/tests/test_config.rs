@@ -32,6 +32,28 @@ fn copy_keypair(keypair: &Keypair) -> Keypair {
 }
 
 #[allow(clippy::result_large_err)]
+fn initialize_config(env: &mut Env, authority: &Keypair) -> litesvm::types::TransactionResult {
+    let ix = new_ix(
+        program_id(),
+        spotboard::instruction::InitializeConfig {
+            treasury: env.treasury,
+            fee_bps: spotboard::constants::PLATFORM_FEE_BPS,
+        }
+        .data(),
+        spotboard::accounts::InitializeConfig {
+            authority: authority.pubkey(),
+            config: env.config,
+            program: program_id(),
+            program_data: env.program_data,
+            payment_mint: env.usdc,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[ix], authority, &[])
+}
+
+#[allow(clippy::result_large_err)]
 fn propose_authority(
     env: &mut Env,
     authority: &Keypair,
@@ -98,6 +120,22 @@ fn initializes_protocol_config() {
     assert_eq!(config.payment_mint, env.usdc);
     assert_eq!(config.treasury, env.treasury);
     assert_eq!(config.fee_bps, spotboard::constants::PLATFORM_FEE_BPS);
+}
+
+#[test]
+fn only_upgrade_authority_can_initialize_config() {
+    let mut env = Env::uninitialized();
+    let attacker = Keypair::new();
+    env.svm.airdrop(&attacker.pubkey(), 10_000_000_000).unwrap();
+
+    assert!(initialize_config(&mut env, &attacker).is_err());
+    assert!(env.svm.get_account(&env.config).is_none());
+    let authority = copy_keypair(&env.mint_authority);
+    initialize_config(&mut env, &authority).unwrap();
+    assert_eq!(
+        read_config(&env.svm, &env.config).authority,
+        authority.pubkey()
+    );
 }
 
 #[test]

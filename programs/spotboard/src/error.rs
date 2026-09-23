@@ -76,4 +76,6 @@ pub enum SpotboardError {
     InvalidDecisionEvidence,
     #[msg("Proposed authority must be a different, nondefault address.")]
     InvalidAuthorityTransfer,
+    #[msg("Only the program upgrade authority can initialize config.")]
+    InvalidConfigAuthority,
 }
