@@ -7,7 +7,10 @@
   "scripts": {
     "init:devnet": "node scripts/initialize-devnet.js --confirm",
     "smoke:devnet": "node scripts/smoke-devnet.js --confirm",
+    "smoke:auction:devnet": "node scripts/smoke-auction-devnet.js --confirm",
     "smoke:dispute:devnet": "node scripts/smoke-dispute-devnet.js --confirm",
+    "smoke:payout:start:devnet": "node scripts/smoke-payout-devnet.js start --confirm",
+    "smoke:payout:finish:devnet": "node scripts/smoke-payout-devnet.js finish --confirm",
     "test:anchor": "ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
   },
   "devDependencies": {
