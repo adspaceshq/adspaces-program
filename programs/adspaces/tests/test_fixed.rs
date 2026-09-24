@@ -80,6 +80,49 @@ fn delivery_deadline_must_follow_artwork_close() {
     assert!(env.svm.get_account(&listing).is_none());
 }
 
+#[test]
+fn metadata_uri_accepts_exact_account_limit() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+
+    for (slug_hash, length, succeeds) in [
+        ([32; 16], adspaces::constants::METADATA_URI_MAX_LEN, true),
+        (
+            [33; 16],
+            adspaces::constants::METADATA_URI_MAX_LEN + 1,
+            false,
+        ),
+    ] {
+        let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
+        let ix = new_ix(
+            program_id(),
+            adspaces::instruction::CreateListing {
+                slug_hash,
+                metadata_uri: "m".repeat(length),
+                mode: adspaces::constants::MODE_FIXED,
+                deadline: now + 86_400,
+                artwork_close: now + 86_400,
+                delivery_deadline: now + 2 * 86_400,
+                min_increment: 0,
+                double_up: false,
+            }
+            .data(),
+            adspaces::accounts::CreateListing {
+                seller: seller.pubkey(),
+                listing,
+                config: env.config,
+                usdc_mint: env.usdc,
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+        );
+        assert_eq!(send(&mut env.svm, &[ix], &seller, &[]).is_ok(), succeeds);
+        assert_eq!(env.svm.get_account(&listing).is_some(), succeeds);
+    }
+}
+
 fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) -> (Pubkey, Pubkey) {
     let index = read_listing(&env.svm, listing).spot_count;
     let (spot, _) = spot_pda(listing, index);

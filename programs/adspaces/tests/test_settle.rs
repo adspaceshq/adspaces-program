@@ -728,13 +728,22 @@ fn only_winner_can_dispute_and_block_payout() {
     let (dispute_record, _) = dispute_pda(&spot);
     assert!(env.svm.get_account(&dispute_record).is_none());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
-    let dispute_meta = dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    let maximum_evidence_uri = "e".repeat(adspaces::constants::DISPUTE_URI_MAX_LEN);
+    let dispute_meta = dispute_with_evidence(
+        &mut env,
+        &buyer,
+        &listing,
+        &spot,
+        [9; 32],
+        &maximum_evidence_uri,
+    )
+    .unwrap();
     let stored_dispute = read_dispute(&env.svm, &dispute_record);
     assert_eq!(stored_dispute.spot, spot);
     assert_eq!(stored_dispute.buyer, buyer.pubkey());
     assert!(stored_dispute.proof_submitted);
     assert_eq!(stored_dispute.evidence_hash, [9; 32]);
-    assert_eq!(stored_dispute.evidence_uri, DISPUTE_URI);
+    assert_eq!(stored_dispute.evidence_uri, maximum_evidence_uri);
     assert_event(
         &dispute_meta,
         &adspaces::events::DisputeRaised {
@@ -794,12 +803,13 @@ fn only_winner_can_dispute_and_block_payout() {
 
     let resolver = env.mint_authority.pubkey();
     let (dispute_record, _) = dispute_pda(&spot);
+    let maximum_decision_uri = "d".repeat(adspaces::constants::DISPUTE_URI_MAX_LEN);
     let resolve = new_ix(
         program_id(),
         adspaces::instruction::ResolveDispute {
             seller_share_bps: 5_000,
             decision_hash: [7; 32],
-            decision_uri: DECISION_URI.to_string(),
+            decision_uri: maximum_decision_uri.clone(),
         }
         .data(),
         adspaces::accounts::ResolveDispute {
@@ -866,7 +876,7 @@ fn only_winner_can_dispute_and_block_payout() {
     let fee = half as u128 * FEE_BPS / 10_000;
     let stored_dispute = read_dispute(&env.svm, &dispute_record);
     assert_eq!(stored_dispute.decision_hash, [7; 32]);
-    assert_eq!(stored_dispute.decision_uri, DECISION_URI);
+    assert_eq!(stored_dispute.decision_uri, maximum_decision_uri);
     assert_eq!(stored_dispute.decided_at, env.clock().unix_timestamp);
     assert_eq!(stored_dispute.seller_share_bps, 5_000);
     assert_eq!(stored_dispute.buyer_refund, half);
@@ -966,8 +976,10 @@ fn proof_uri_must_be_nonempty_and_bounded() {
     assert!(
         try_submit_proof_with_uri(&mut env, &seller, &listing, &spot, &"a".repeat(201)).is_err()
     );
+    let maximum_uri = "a".repeat(adspaces::constants::PROOF_URI_MAX_LEN);
+    try_submit_proof_with_uri(&mut env, &seller, &listing, &spot, &maximum_uri).unwrap();
     let (proof, _) = proof_pda(&spot);
-    assert!(env.svm.get_account(&proof).is_none());
-    assert_eq!(read_spot(&env.svm, &spot).proof_submitted_at, 0);
+    assert_eq!(read_proof(&env.svm, &proof).proof_uri, maximum_uri);
+    assert!(read_spot(&env.svm, &spot).proof_submitted_at > 0);
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 }
