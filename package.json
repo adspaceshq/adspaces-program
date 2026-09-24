@@ -7,6 +7,7 @@
   "scripts": {
     "init:devnet": "node scripts/initialize-devnet.js --confirm",
     "smoke:devnet": "node scripts/smoke-devnet.js --confirm",
+    "smoke:dispute:devnet": "node scripts/smoke-dispute-devnet.js --confirm",
     "test:anchor": "ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
   },
   "devDependencies": {
