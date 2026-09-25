@@ -11,7 +11,7 @@
     "smoke:dispute:devnet": "node scripts/smoke-dispute-devnet.js --confirm",
     "smoke:payout:start:devnet": "node scripts/smoke-payout-devnet.js start --confirm",
     "smoke:payout:finish:devnet": "node scripts/smoke-payout-devnet.js finish --confirm",
-    "test:anchor": "ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
+    "test:anchor": "tsc --outDir .anchor/ts-tests --rootDir . && mocha -t 1000000 \".anchor/ts-tests/tests/**/*.js\""
   },
   "devDependencies": {
     "@coral-xyz/anchor": "^0.32.1",
@@ -22,5 +22,10 @@
     "chai": "^4.5.0",
     "ts-mocha": "^11.1.0",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "rpc-websockets": {
+      "uuid": "11.1.0"
+    }
   }
 }
