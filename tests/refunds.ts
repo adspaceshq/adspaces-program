@@ -150,7 +150,7 @@ describe("funded spot refunds", () => {
 
   it("lets anyone refund a missing proof only after the delivery deadline", async () => {
     const { buyerAta, caller, deliveryDeadline, listing, paymentMint, spot, vault } =
-      await fundedSpot(10, 20);
+      await fundedSpot(2, 4);
     const refund = () =>
       program.methods
         .refundSpot()
@@ -175,9 +175,18 @@ describe("funded spot refunds", () => {
     expect(earlyRejected).to.equal(true);
     expect((await getAccount(provider.connection, vault)).amount).to.equal(price);
 
-    const timeout = Date.now() + 120_000;
+    const timeout = Date.now() + 30_000;
     while ((await validatorTime()) < deliveryDeadline) {
       if (Date.now() > timeout) throw new Error("Validator clock did not advance");
+      await provider.sendAndConfirm(
+        new anchor.web3.Transaction().add(
+          anchor.web3.SystemProgram.transfer({
+            fromPubkey: wallet.publicKey,
+            toPubkey: wallet.publicKey,
+            lamports: 0,
+          }),
+        ),
+      );
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
     await refund();

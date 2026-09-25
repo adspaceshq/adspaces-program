@@ -60,6 +60,11 @@ describe("protocol config", () => {
     const stored = await program.account.config.fetch(config);
     expect(stored.treasury.equals(nextTreasury)).to.equal(true);
     expect(stored.feeBps).to.equal(300);
+
+    await program.methods
+      .updateConfig(treasury, 250)
+      .accountsStrict({ authority: wallet.publicKey, config })
+      .rpc();
   });
 
   it("requires the proposed authority to accept a handoff", async () => {

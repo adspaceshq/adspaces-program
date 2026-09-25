@@ -57,9 +57,18 @@ describe("dispute lifecycle", () => {
   }
 
   async function waitUntil(timestamp: number): Promise<void> {
-    const deadline = Date.now() + 120_000;
+    const deadline = Date.now() + 30_000;
     while ((await validatorTime()) < timestamp) {
       if (Date.now() > deadline) throw new Error("Validator clock did not advance");
+      await provider.sendAndConfirm(
+        new anchor.web3.Transaction().add(
+          anchor.web3.SystemProgram.transfer({
+            fromPubkey: wallet.publicKey,
+            toPubkey: wallet.publicKey,
+            lamports: 0,
+          }),
+        ),
+      );
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
@@ -114,8 +123,8 @@ describe("dispute lifecycle", () => {
     );
 
     const now = await validatorTime();
-    const auctionEnd = now + 12;
-    const deliveryEnd = now + 30;
+    const auctionEnd = now + 2;
+    const deliveryEnd = now + 4;
     await program.methods
       .createListing(
         slugHash,
@@ -326,14 +335,14 @@ describe("dispute lifecycle", () => {
     ).address;
 
     const now = await validatorTime();
-    const deliveryEnd = now + 20;
+    const deliveryEnd = now + 4;
     await program.methods
       .createListing(
         auctionSlug,
         "ipfs://adspaces-validator-auction-dispute",
         1,
-        new anchor.BN(now + 12),
-        new anchor.BN(now + 12),
+        new anchor.BN(now + 2),
+        new anchor.BN(now + 2),
         new anchor.BN(deliveryEnd),
         new anchor.BN(10_000_000),
         false,
