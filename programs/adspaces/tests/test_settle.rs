@@ -43,18 +43,23 @@ fn create_fixed_listing(
             delivery_deadline: deadline + 7 * 86_400,
             min_increment: 0,
             double_up: false,
+            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            uplift_fee_bps: 0,
+            max_fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
         }
         .data(),
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
+            reviewer: env.mint_authority.pubkey(),
             listing,
             config: env.config,
+            review_authority: env.review_authority,
             usdc_mint: env.usdc,
             system_program: system_program::ID,
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[ix], seller, &[]).unwrap();
+    send(&mut env.svm, &[ix], seller, &[&env.mint_authority]).unwrap();
     listing
 }
 

@@ -25,18 +25,23 @@ fn create_fixed_listing(env: &mut Env, seller: &Keypair, slug_hash: [u8; 16]) ->
             delivery_deadline: now + 37 * 86_400,
             min_increment: 0,
             double_up: false,
+            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            uplift_fee_bps: 0,
+            max_fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
         }
         .data(),
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
+            reviewer: env.mint_authority.pubkey(),
             listing,
             config: env.config,
+            review_authority: env.review_authority,
             usdc_mint: env.usdc,
             system_program: system_program::ID,
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[ix], seller, &[]).unwrap();
+    send(&mut env.svm, &[ix], seller, &[&env.mint_authority]).unwrap();
 
     let stored = read_listing(&env.svm, &listing);
     assert_eq!(stored.seller, seller.pubkey());
@@ -65,18 +70,23 @@ fn delivery_deadline_must_follow_artwork_close() {
             delivery_deadline: now + 2 * 86_400,
             min_increment: 0,
             double_up: false,
+            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            uplift_fee_bps: 0,
+            max_fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
         }
         .data(),
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
+            reviewer: env.mint_authority.pubkey(),
             listing,
             config: env.config,
+            review_authority: env.review_authority,
             usdc_mint: env.usdc,
             system_program: system_program::ID,
         }
         .to_account_metas(None),
     );
-    assert!(send(&mut env.svm, &[ix], &seller, &[]).is_err());
+    assert!(send(&mut env.svm, &[ix], &seller, &[&env.mint_authority]).is_err());
     assert!(env.svm.get_account(&listing).is_none());
 }
 
@@ -107,18 +117,26 @@ fn metadata_uri_accepts_exact_account_limit() {
                 delivery_deadline: now + 2 * 86_400,
                 min_increment: 0,
                 double_up: false,
+                fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+                uplift_fee_bps: 0,
+                max_fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
             }
             .data(),
             adspaces::accounts::CreateListing {
                 seller: seller.pubkey(),
+                reviewer: env.mint_authority.pubkey(),
                 listing,
                 config: env.config,
+                review_authority: env.review_authority,
                 usdc_mint: env.usdc,
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
         );
-        assert_eq!(send(&mut env.svm, &[ix], &seller, &[]).is_ok(), succeeds);
+        assert_eq!(
+            send(&mut env.svm, &[ix], &seller, &[&env.mint_authority]).is_ok(),
+            succeeds
+        );
         assert_eq!(env.svm.get_account(&listing).is_some(), succeeds);
     }
 }
@@ -270,18 +288,23 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
             delivery_deadline: now + 37 * 86_400,
             min_increment: 10_000_000,
             double_up: false,
+            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            uplift_fee_bps: 1_000,
+            max_fee_bps: 750,
         }
         .data(),
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
+            reviewer: env.mint_authority.pubkey(),
             listing: auction_listing,
             config: env.config,
+            review_authority: env.review_authority,
             usdc_mint: env.usdc,
             system_program: system_program::ID,
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[create], &seller, &[]).unwrap();
+    send(&mut env.svm, &[create], &seller, &[&env.mint_authority]).unwrap();
     let (a_spot, a_vault) = add_spot_to(&mut env, &seller, &auction_listing, PRICE);
 
     let claim_ix = new_ix(
@@ -321,18 +344,23 @@ fn claim_after_deadline_fails() {
             delivery_deadline: now + 20,
             min_increment: 0,
             double_up: false,
+            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            uplift_fee_bps: 0,
+            max_fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
         }
         .data(),
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
+            reviewer: env.mint_authority.pubkey(),
             listing,
             config: env.config,
+            review_authority: env.review_authority,
             usdc_mint: env.usdc,
             system_program: system_program::ID,
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[create], &seller, &[]).unwrap();
+    send(&mut env.svm, &[create], &seller, &[&env.mint_authority]).unwrap();
     let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
 
     env.warp_to_timestamp(now + 1_000);

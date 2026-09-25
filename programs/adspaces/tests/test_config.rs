@@ -111,6 +111,25 @@ fn cancel_authority(env: &mut Env, authority: &Keypair) -> litesvm::types::Trans
     send(&mut env.svm, &[ix], authority, &[])
 }
 
+#[allow(clippy::result_large_err)]
+fn update_reviewer(
+    env: &mut Env,
+    authority: &Keypair,
+    new_authority: Pubkey,
+) -> litesvm::types::TransactionResult {
+    let ix = new_ix(
+        program_id(),
+        adspaces::instruction::UpdateReviewAuthority { new_authority }.data(),
+        adspaces::accounts::UpdateReviewAuthority {
+            authority: authority.pubkey(),
+            config: env.config,
+            review_authority: env.review_authority,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[ix], authority, &[])
+}
+
 #[test]
 fn initializes_protocol_config() {
     let env = Env::new();
@@ -120,6 +139,31 @@ fn initializes_protocol_config() {
     assert_eq!(config.payment_mint, env.usdc);
     assert_eq!(config.treasury, env.treasury);
     assert_eq!(config.fee_bps, adspaces::constants::PLATFORM_FEE_BPS);
+}
+
+#[test]
+fn config_authority_controls_the_reviewer() {
+    let mut env = Env::new();
+    let current = copy_keypair(&env.mint_authority);
+    let next = Pubkey::new_unique();
+    let unauthorized = Keypair::new();
+    env.svm
+        .airdrop(&unauthorized.pubkey(), 10_000_000_000)
+        .unwrap();
+
+    let stored = read_review_authority(&env.svm, &env.review_authority);
+    assert_eq!(stored.config, env.config);
+    assert_eq!(stored.authority, current.pubkey());
+
+    assert!(update_reviewer(&mut env, &unauthorized, next).is_err());
+    assert!(update_reviewer(&mut env, &current, Pubkey::default()).is_err());
+    assert!(update_reviewer(&mut env, &current, current.pubkey()).is_err());
+
+    update_reviewer(&mut env, &current, next).unwrap();
+    assert_eq!(
+        read_review_authority(&env.svm, &env.review_authority).authority,
+        next
+    );
 }
 
 #[test]

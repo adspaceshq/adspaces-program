@@ -33,18 +33,23 @@ fn create_auction_listing(
             delivery_deadline: now + 37 * 86_400,
             min_increment,
             double_up,
+            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            uplift_fee_bps: 1_000,
+            max_fee_bps: 750,
         }
         .data(),
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
+            reviewer: env.mint_authority.pubkey(),
             listing,
             config: env.config,
+            review_authority: env.review_authority,
             usdc_mint: env.usdc,
             system_program: system_program::ID,
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[ix], seller, &[]).unwrap();
+    send(&mut env.svm, &[ix], seller, &[&env.mint_authority]).unwrap();
 
     let (spot, _) = spot_pda(&listing, 0);
     let (vault, _) = vault_pda(&spot);

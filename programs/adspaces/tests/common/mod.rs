@@ -50,6 +50,13 @@ pub fn authority_transfer_pda(config: &Pubkey) -> (Pubkey, u8) {
     )
 }
 
+pub fn review_authority_pda(config: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[adspaces::constants::REVIEW_AUTHORITY_SEED, config.as_ref()],
+        &program_id(),
+    )
+}
+
 pub fn listing_pda(seller: &Pubkey, slug_hash: &[u8; 16]) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
@@ -95,6 +102,7 @@ pub struct Env {
     pub usdc: Pubkey,
     pub config: Pubkey,
     pub program_data: Pubkey,
+    pub review_authority: Pubkey,
     pub treasury: Pubkey,
 }
 
@@ -154,6 +162,7 @@ impl Env {
 
         let (config, _) = config_pda();
         let treasury = Pubkey::new_unique();
+        let (review_authority, _) = review_authority_pda(&config);
         let initialize_config = new_ix(
             program_id(),
             adspaces::instruction::InitializeConfig {
@@ -173,6 +182,21 @@ impl Env {
         );
         if should_initialize_config {
             send(&mut svm, &[initialize_config], &mint_authority, &[]).unwrap();
+            let initialize_reviewer = new_ix(
+                program_id(),
+                adspaces::instruction::InitializeReviewAuthority {
+                    authority: mint_authority.pubkey(),
+                }
+                .data(),
+                adspaces::accounts::InitializeReviewAuthority {
+                    authority: mint_authority.pubkey(),
+                    config,
+                    review_authority,
+                    system_program: system_program::ID,
+                }
+                .to_account_metas(None),
+            );
+            send(&mut svm, &[initialize_reviewer], &mint_authority, &[]).unwrap();
         }
 
         Self {
@@ -181,6 +205,7 @@ impl Env {
             usdc,
             config,
             program_data,
+            review_authority,
             treasury,
         }
     }
@@ -288,6 +313,15 @@ pub fn read_config(svm: &LiteSVM, config: &Pubkey) -> adspaces::state::Config {
     let account = svm.get_account(config).unwrap();
     let mut data: &[u8] = &account.data;
     adspaces::state::Config::try_deserialize(&mut data).unwrap()
+}
+
+pub fn read_review_authority(
+    svm: &LiteSVM,
+    review_authority: &Pubkey,
+) -> adspaces::state::ReviewAuthority {
+    let account = svm.get_account(review_authority).unwrap();
+    let mut data: &[u8] = &account.data;
+    adspaces::state::ReviewAuthority::try_deserialize(&mut data).unwrap()
 }
 
 pub fn read_authority_transfer(
