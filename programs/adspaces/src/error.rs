@@ -78,4 +78,8 @@ pub enum AdspacesError {
     InvalidAuthorityTransfer,
     #[msg("Only the program upgrade authority can initialize config.")]
     InvalidConfigAuthority,
+    #[msg("Only the configured review authority can approve a listing.")]
+    InvalidReviewAuthority,
+    #[msg("Listing fee policy is invalid for its pricing mode.")]
+    InvalidFeePolicy,
 }

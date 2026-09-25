@@ -1,6 +1,7 @@
 pub mod constants;
 pub mod error;
 pub mod events;
+pub mod fees;
 pub mod instructions;
 pub mod state;
 
@@ -43,6 +44,20 @@ pub mod adspaces {
 
     pub fn cancel_config_authority(ctx: Context<CancelConfigAuthority>) -> Result<()> {
         instructions::config_authority::handle_cancel_config_authority(ctx)
+    }
+
+    pub fn initialize_review_authority(
+        ctx: Context<InitializeReviewAuthority>,
+        authority: Pubkey,
+    ) -> Result<()> {
+        instructions::review_authority::handle_initialize_review_authority(ctx, authority)
+    }
+
+    pub fn update_review_authority(
+        ctx: Context<UpdateReviewAuthority>,
+        new_authority: Pubkey,
+    ) -> Result<()> {
+        instructions::review_authority::handle_update_review_authority(ctx, new_authority)
     }
 
     pub fn close_spot(ctx: Context<CloseSpot>) -> Result<()> {
@@ -110,6 +125,9 @@ pub mod adspaces {
         delivery_deadline: i64,
         min_increment: u64,
         double_up: bool,
+        fee_bps: u16,
+        uplift_fee_bps: u16,
+        max_fee_bps: u16,
     ) -> Result<()> {
         instructions::create_listing::handle_create_listing(
             ctx,
@@ -121,6 +139,9 @@ pub mod adspaces {
             delivery_deadline,
             min_increment,
             double_up,
+            fee_bps,
+            uplift_fee_bps,
+            max_fee_bps,
         )
     }
 }

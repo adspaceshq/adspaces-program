@@ -7,6 +7,9 @@ pub const CONFIG_SEED: &[u8] = b"config";
 pub const AUTHORITY_TRANSFER_SEED: &[u8] = b"authority_transfer";
 
 #[constant]
+pub const REVIEW_AUTHORITY_SEED: &[u8] = b"review_authority";
+
+#[constant]
 pub const LISTING_SEED: &[u8] = b"listing";
 
 #[constant]

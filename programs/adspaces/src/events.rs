@@ -33,11 +33,25 @@ pub struct ConfigAuthorityCancelled {
 }
 
 #[event]
+pub struct ReviewAuthorityInitialized {
+    pub authority: Pubkey,
+}
+
+#[event]
+pub struct ReviewAuthorityUpdated {
+    pub previous_authority: Pubkey,
+    pub new_authority: Pubkey,
+}
+
+#[event]
 pub struct ListingCreated {
     pub listing: Pubkey,
     pub seller: Pubkey,
     pub slug_hash: [u8; 16],
     pub mode: u8,
+    pub fee_bps: u16,
+    pub uplift_fee_bps: u16,
+    pub max_fee_bps: u16,
 }
 
 #[event]

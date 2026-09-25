@@ -23,6 +23,14 @@ pub struct AuthorityTransfer {
 
 #[account]
 #[derive(InitSpace)]
+pub struct ReviewAuthority {
+    pub config: Pubkey,
+    pub authority: Pubkey,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
 pub struct Listing {
     pub seller: Pubkey,
     /// First 16 bytes of sha256(slug).
@@ -40,6 +48,8 @@ pub struct Listing {
     pub status: u8,
     pub treasury: Pubkey,
     pub fee_bps: u16,
+    pub uplift_fee_bps: u16,
+    pub max_fee_bps: u16,
     pub bump: u8,
 }
 

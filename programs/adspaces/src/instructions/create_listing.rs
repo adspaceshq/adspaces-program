@@ -5,7 +5,7 @@ use crate::{
     constants::*,
     error::AdspacesError,
     events::ListingCreated,
-    state::{Config, Listing},
+    state::{Config, Listing, ReviewAuthority},
 };
 
 #[derive(Accounts)]
@@ -13,6 +13,7 @@ use crate::{
 pub struct CreateListing<'info> {
     #[account(mut)]
     pub seller: Signer<'info>,
+    pub reviewer: Signer<'info>,
     #[account(
         init,
         payer = seller,
@@ -23,6 +24,13 @@ pub struct CreateListing<'info> {
     pub listing: Account<'info, Listing>,
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Account<'info, Config>,
+    #[account(
+        seeds = [REVIEW_AUTHORITY_SEED, config.key().as_ref()],
+        bump = review_authority.bump,
+        constraint = review_authority.config == config.key() @ AdspacesError::Unauthorized,
+        constraint = review_authority.authority == reviewer.key() @ AdspacesError::InvalidReviewAuthority,
+    )]
+    pub review_authority: Account<'info, ReviewAuthority>,
     #[account(
         constraint = usdc_mint.key() == config.payment_mint @ AdspacesError::InvalidMint
     )]
@@ -41,6 +49,9 @@ pub fn handle_create_listing(
     delivery_deadline: i64,
     min_increment: u64,
     double_up: bool,
+    fee_bps: u16,
+    uplift_fee_bps: u16,
+    max_fee_bps: u16,
 ) -> Result<()> {
     require!(
         mode == MODE_FIXED || mode == MODE_AUCTION,
@@ -65,6 +76,13 @@ pub fn handle_create_listing(
     if mode == MODE_AUCTION && !double_up {
         require!(min_increment > 0, AdspacesError::InvalidMinIncrement);
     }
+    validate_fee_policy(
+        mode,
+        ctx.accounts.config.fee_bps,
+        fee_bps,
+        uplift_fee_bps,
+        max_fee_bps,
+    )?;
 
     let listing = &mut ctx.accounts.listing;
     listing.seller = ctx.accounts.seller.key();
@@ -80,7 +98,9 @@ pub fn handle_create_listing(
     listing.spot_count = 0;
     listing.status = LISTING_OPEN;
     listing.treasury = ctx.accounts.config.treasury;
-    listing.fee_bps = ctx.accounts.config.fee_bps;
+    listing.fee_bps = fee_bps;
+    listing.uplift_fee_bps = uplift_fee_bps;
+    listing.max_fee_bps = max_fee_bps;
     listing.bump = ctx.bumps.listing;
 
     emit!(ListingCreated {
@@ -88,7 +108,35 @@ pub fn handle_create_listing(
         seller: listing.seller,
         slug_hash,
         mode,
+        fee_bps,
+        uplift_fee_bps,
+        max_fee_bps,
     });
 
+    Ok(())
+}
+
+fn validate_fee_policy(
+    mode: u8,
+    minimum_fee_bps: u16,
+    fee_bps: u16,
+    uplift_fee_bps: u16,
+    max_fee_bps: u16,
+) -> Result<()> {
+    require!(
+        fee_bps >= minimum_fee_bps && fee_bps <= 10_000,
+        AdspacesError::InvalidFeePolicy
+    );
+    if mode == MODE_FIXED {
+        require!(
+            uplift_fee_bps == 0 && max_fee_bps == fee_bps,
+            AdspacesError::InvalidFeePolicy
+        );
+    } else {
+        require!(
+            fee_bps <= max_fee_bps && max_fee_bps <= uplift_fee_bps && uplift_fee_bps <= 10_000,
+            AdspacesError::InvalidFeePolicy
+        );
+    }
     Ok(())
 }
