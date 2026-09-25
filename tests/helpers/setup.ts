@@ -12,24 +12,28 @@ export async function ensureConfig(
     [Buffer.from("config")],
     program.programId,
   );
+  const [reviewAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("review_authority"), config.toBuffer()],
+    program.programId,
+  );
+  const wallet = provider.wallet as anchor.Wallet;
+
+  let paymentMint: anchor.web3.PublicKey;
+  let treasury: anchor.web3.PublicKey;
 
   try {
     const stored = await program.account.config.fetch(config);
-    return {
-      config,
-      paymentMint: stored.paymentMint,
-      treasury: stored.treasury,
-    };
+    paymentMint = stored.paymentMint;
+    treasury = stored.treasury;
   } catch {
-    const wallet = provider.wallet as anchor.Wallet;
-    const paymentMint = await createMint(
+    paymentMint = await createMint(
       provider.connection,
       wallet.payer,
       wallet.publicKey,
       null,
       6,
     );
-    const treasury = anchor.web3.Keypair.generate().publicKey;
+    treasury = anchor.web3.Keypair.generate().publicKey;
     const programAccount = await provider.connection.getAccountInfo(program.programId);
     if (!programAccount) throw new Error("Program account is unavailable");
     const programData = new anchor.web3.PublicKey(programAccount.data.subarray(4, 36));
@@ -46,6 +50,21 @@ export async function ensureConfig(
       })
       .rpc();
 
-    return { config, paymentMint, treasury };
   }
+
+  try {
+    await program.account.reviewAuthority.fetch(reviewAuthority);
+  } catch {
+    await program.methods
+      .initializeReviewAuthority(wallet.publicKey)
+      .accountsStrict({
+        authority: wallet.publicKey,
+        config,
+        reviewAuthority,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+  }
+
+  return { config, paymentMint, treasury, reviewAuthority };
 }

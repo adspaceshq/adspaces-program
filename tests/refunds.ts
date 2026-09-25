@@ -22,6 +22,10 @@ describe("funded spot refunds", () => {
     [Buffer.from("config")],
     program.programId,
   );
+  const [reviewAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("review_authority"), config.toBuffer()],
+    program.programId,
+  );
 
   async function validatorTime(): Promise<number> {
     const clock = await provider.connection.getAccountInfo(anchor.web3.SYSVAR_CLOCK_PUBKEY);
@@ -80,11 +84,16 @@ describe("funded spot refunds", () => {
         new anchor.BN(deliveryDeadline),
         new anchor.BN(0),
         false,
+        250,
+        0,
+        250,
       )
       .accountsStrict({
         seller: wallet.publicKey,
+        reviewer: wallet.publicKey,
         listing,
         config,
+        reviewAuthority,
         usdcMint: paymentMint,
         systemProgram: anchor.web3.SystemProgram.programId,
       })

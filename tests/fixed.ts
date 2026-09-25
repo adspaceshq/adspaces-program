@@ -24,6 +24,10 @@ describe("fixed-price spots", () => {
     [Buffer.from("config")],
     program.programId,
   );
+  const [reviewAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("review_authority"), config.toBuffer()],
+    program.programId,
+  );
   const [listing] = anchor.web3.PublicKey.findProgramAddressSync(
     [Buffer.from("listing"), wallet.publicKey.toBuffer(), Buffer.from(slugHash)],
     program.programId,
@@ -74,11 +78,16 @@ describe("fixed-price spots", () => {
         new anchor.BN(now + 86400),
         new anchor.BN(0),
         false,
+        250,
+        0,
+        250,
       )
       .accountsStrict({
         seller: wallet.publicKey,
+        reviewer: wallet.publicKey,
         listing,
         config,
+        reviewAuthority,
         usdcMint: paymentMint,
         systemProgram: anchor.web3.SystemProgram.programId,
       })

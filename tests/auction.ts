@@ -26,6 +26,10 @@ describe("auction spots", () => {
     [Buffer.from("config")],
     program.programId,
   );
+  const [reviewAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("review_authority"), config.toBuffer()],
+    program.programId,
+  );
   const [listing] = anchor.web3.PublicKey.findProgramAddressSync(
     [Buffer.from("listing"), wallet.publicKey.toBuffer(), Buffer.from(slugHash)],
     program.programId,
@@ -87,11 +91,16 @@ describe("auction spots", () => {
         new anchor.BN(now + 86400),
         increment,
         false,
+        250,
+        1_000,
+        750,
       )
       .accountsStrict({
         seller: wallet.publicKey,
+        reviewer: wallet.publicKey,
         listing,
         config,
+        reviewAuthority,
         usdcMint: paymentMint,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
@@ -238,11 +247,16 @@ describe("auction spots", () => {
         new anchor.BN(now + 86400),
         new anchor.BN(0),
         true,
+        250,
+        1_000,
+        750,
       )
       .accountsStrict({
         seller: wallet.publicKey,
+        reviewer: wallet.publicKey,
         listing: doubleListing,
         config,
+        reviewAuthority,
         usdcMint: paymentMint,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
