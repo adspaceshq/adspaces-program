@@ -39,6 +39,10 @@ async function main() {
     [Buffer.from("config")],
     PROGRAM_ID,
   );
+  const [reviewAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("review_authority"), config.toBuffer()],
+    PROGRAM_ID,
+  );
   const existing = await connection.getAccountInfo(config);
   if (existing) {
     const stored = await program.account.config.fetch(config);
@@ -55,33 +59,46 @@ async function main() {
     console.log(`Payment mint: ${stored.paymentMint}`);
     console.log(`Treasury owner: ${stored.treasury}`);
     console.log(`Fee: ${stored.feeBps} bps`);
-    return;
+  } else {
+    const programAccount = await connection.getAccountInfo(PROGRAM_ID);
+    if (!programAccount || !programAccount.executable) {
+      throw new Error("AdSpaces program is not deployed on devnet");
+    }
+    const programData = new anchor.web3.PublicKey(programAccount.data.subarray(4, 36));
+    const signature = await program.methods
+      .initializeConfig(treasury, feeBps)
+      .accountsStrict({
+        authority: wallet.publicKey,
+        config,
+        program: PROGRAM_ID,
+        programData,
+        paymentMint: PAYMENT_MINT,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+    console.log(`Config signature: ${signature}`);
   }
 
-  const programAccount = await connection.getAccountInfo(PROGRAM_ID);
-  if (!programAccount || !programAccount.executable) {
-    throw new Error("AdSpaces program is not deployed on devnet");
+  const existingReviewer = await connection.getAccountInfo(reviewAuthority);
+  if (existingReviewer) {
+    const stored = await program.account.reviewAuthority.fetch(reviewAuthority);
+    if (!stored.authority.equals(wallet.publicKey)) {
+      throw new Error("Existing review authority does not match the deploy wallet");
+    }
+    console.log(`Review authority already initialized: ${reviewAuthority}`);
+  } else {
+    const signature = await program.methods
+      .initializeReviewAuthority(wallet.publicKey)
+      .accountsStrict({
+        authority: wallet.publicKey,
+        config,
+        reviewAuthority,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+    console.log(`Review authority signature: ${signature}`);
+    console.log(`Review authority: ${reviewAuthority}`);
   }
-  const programData = new anchor.web3.PublicKey(programAccount.data.subarray(4, 36));
-  const signature = await program.methods
-    .initializeConfig(treasury, feeBps)
-    .accountsStrict({
-      authority: wallet.publicKey,
-      config,
-      program: PROGRAM_ID,
-      programData,
-      paymentMint: PAYMENT_MINT,
-      systemProgram: anchor.web3.SystemProgram.programId,
-    })
-    .rpc();
-
-  const stored = await program.account.config.fetch(config);
-  console.log(`Signature: ${signature}`);
-  console.log(`Config: ${config}`);
-  console.log(`Authority: ${stored.authority}`);
-  console.log(`Payment mint: ${stored.paymentMint}`);
-  console.log(`Treasury owner: ${stored.treasury}`);
-  console.log(`Fee: ${stored.feeBps} bps`);
 }
 
 main().catch((error) => {

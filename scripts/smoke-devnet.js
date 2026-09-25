@@ -42,6 +42,10 @@ async function main() {
     [Buffer.from("config")],
     PROGRAM_ID,
   );
+  const [reviewAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("review_authority"), config.toBuffer()],
+    PROGRAM_ID,
+  );
   const storedConfig = await program.account.config.fetch(config);
   if (!storedConfig.paymentMint.equals(PAYMENT_MINT)) {
     throw new Error("Devnet config payment mint is unexpected");
@@ -78,11 +82,16 @@ async function main() {
       new anchor.BN(now + 10_800),
       new anchor.BN(0),
       false,
+      250,
+      0,
+      250,
     )
     .accountsStrict({
       seller: seller.publicKey,
+      reviewer: seller.publicKey,
       listing,
       config,
+      reviewAuthority,
       usdcMint: PAYMENT_MINT,
       systemProgram: anchor.web3.SystemProgram.programId,
     })

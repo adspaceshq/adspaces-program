@@ -68,6 +68,10 @@ async function start() {
     [Buffer.from("config")],
     PROGRAM_ID,
   );
+  const [reviewAuthority] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("review_authority"), config.toBuffer()],
+    PROGRAM_ID,
+  );
   const storedConfig = await program.account.config.fetch(config);
   const buyerAta = await getAssociatedTokenAddress(PAYMENT_MINT, buyer.publicKey);
   const sellerAta = await getAssociatedTokenAddress(PAYMENT_MINT, seller.publicKey);
@@ -175,11 +179,16 @@ async function start() {
       new anchor.BN(deliveryDeadline),
       new anchor.BN(0),
       false,
+      250,
+      0,
+      250,
     )
     .accountsStrict({
       seller: seller.publicKey,
+      reviewer: seller.publicKey,
       listing,
       config,
+      reviewAuthority,
       usdcMint: PAYMENT_MINT,
       systemProgram: anchor.web3.SystemProgram.programId,
     })
