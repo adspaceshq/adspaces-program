@@ -5,6 +5,7 @@ use crate::{
     constants::*,
     error::AdspacesError,
     events::SellerWithdrawn,
+    fees::calculate_fee,
     state::{Listing, Spot},
 };
 
@@ -73,11 +74,7 @@ pub fn handle_withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
     let balance = ctx.accounts.vault.amount;
     require!(balance > 0, AdspacesError::SpotNotFunded);
 
-    let fee = (balance as u128)
-        .checked_mul(ctx.accounts.listing.fee_bps as u128)
-        .and_then(|v| v.checked_div(10_000))
-        .and_then(|v| u64::try_from(v).ok())
-        .ok_or(AdspacesError::MathOverflow)?;
+    let fee = calculate_fee(&ctx.accounts.listing, &ctx.accounts.spot, balance)?;
     let seller_amount = balance
         .checked_sub(fee)
         .ok_or(AdspacesError::MathOverflow)?;

@@ -5,6 +5,7 @@ use crate::{
     constants::*,
     error::AdspacesError,
     events::DisputeResolved,
+    fees::calculate_dispute_fee,
     state::{Config, DisputeRecord, Listing, Spot},
 };
 
@@ -84,7 +85,12 @@ pub fn handle_resolve_dispute(
     let buyer_refund = balance
         .checked_sub(seller_gross)
         .ok_or(AdspacesError::MathOverflow)?;
-    let fee = ((seller_gross as u128) * (ctx.accounts.listing.fee_bps as u128) / 10_000) as u64;
+    let fee = calculate_dispute_fee(
+        &ctx.accounts.listing,
+        &ctx.accounts.spot,
+        balance,
+        seller_share_bps,
+    )?;
     let seller_net = seller_gross
         .checked_sub(fee)
         .ok_or(AdspacesError::MathOverflow)?;
