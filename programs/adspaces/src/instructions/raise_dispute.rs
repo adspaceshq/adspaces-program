@@ -60,7 +60,7 @@ pub fn handle_raise_dispute(
             .accounts
             .listing
             .delivery_deadline
-            .checked_add(REVIEW_WINDOW_SECONDS)
+            .checked_add(ctx.accounts.listing.review_window_seconds)
             .ok_or(AdspacesError::MathOverflow)?;
         require!(now < review_end, AdspacesError::ReviewWindowClosed);
     }
