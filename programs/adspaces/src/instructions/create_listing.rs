@@ -47,6 +47,7 @@ pub fn handle_create_listing(
     deadline: i64,
     artwork_close: i64,
     delivery_deadline: i64,
+    review_window_seconds: i64,
     min_increment: u64,
     double_up: bool,
     fee_bps: u16,
@@ -72,6 +73,10 @@ pub fn handle_create_listing(
         delivery_deadline > artwork_close,
         AdspacesError::InvalidDeliveryDeadline
     );
+    require!(
+        (MIN_REVIEW_WINDOW_SECONDS..=MAX_REVIEW_WINDOW_SECONDS).contains(&review_window_seconds),
+        AdspacesError::InvalidReviewWindow
+    );
 
     if mode == MODE_AUCTION && !double_up {
         require!(min_increment > 0, AdspacesError::InvalidMinIncrement);
@@ -93,6 +98,7 @@ pub fn handle_create_listing(
     listing.deadline = deadline;
     listing.artwork_close = artwork_close;
     listing.delivery_deadline = delivery_deadline;
+    listing.review_window_seconds = review_window_seconds;
     listing.min_increment = min_increment;
     listing.double_up = double_up;
     listing.spot_count = 0;
@@ -108,6 +114,7 @@ pub fn handle_create_listing(
         seller: listing.seller,
         slug_hash,
         mode,
+        review_window_seconds,
         fee_bps,
         uplift_fee_bps,
         max_fee_bps,
