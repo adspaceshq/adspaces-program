@@ -42,6 +42,7 @@ pub struct Listing {
     pub deadline: i64,
     pub artwork_close: i64,
     pub delivery_deadline: i64,
+    pub review_window_seconds: i64,
     pub min_increment: u64,
     pub double_up: bool,
     pub spot_count: u8,

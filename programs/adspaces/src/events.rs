@@ -49,6 +49,7 @@ pub struct ListingCreated {
     pub seller: Pubkey,
     pub slug_hash: [u8; 16],
     pub mode: u8,
+    pub review_window_seconds: i64,
     pub fee_bps: u16,
     pub uplift_fee_bps: u16,
     pub max_fee_bps: u16,

@@ -10,6 +10,8 @@ pub enum AdspacesError {
     InvalidArtworkClose,
     #[msg("Delivery deadline must be after artwork close.")]
     InvalidDeliveryDeadline,
+    #[msg("Review window is outside the allowed range.")]
+    InvalidReviewWindow,
     #[msg("Auction without double-up needs a minimum increment above zero.")]
     InvalidMinIncrement,
     #[msg("Metadata URI is too long.")]

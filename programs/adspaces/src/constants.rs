@@ -68,4 +68,15 @@ pub const SPOT_CANCELLED: u8 = 3;
 pub const SPOT_DISPUTED: u8 = 4;
 
 #[constant]
-pub const REVIEW_WINDOW_SECONDS: i64 = 48 * 60 * 60;
+pub const DEFAULT_REVIEW_WINDOW_SECONDS: i64 = 48 * 60 * 60;
+
+#[constant]
+#[cfg(feature = "devnet-short-review")]
+pub const MIN_REVIEW_WINDOW_SECONDS: i64 = 60;
+
+#[constant]
+#[cfg(not(feature = "devnet-short-review"))]
+pub const MIN_REVIEW_WINDOW_SECONDS: i64 = 60 * 60;
+
+#[constant]
+pub const MAX_REVIEW_WINDOW_SECONDS: i64 = 30 * 24 * 60 * 60;
