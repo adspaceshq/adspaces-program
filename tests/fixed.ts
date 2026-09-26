@@ -76,6 +76,7 @@ describe("fixed-price spots", () => {
         new anchor.BN(now + 3600),
         new anchor.BN(now + 7200),
         new anchor.BN(now + 86400),
+        new anchor.BN(48 * 60 * 60),
         new anchor.BN(0),
         false,
         250,
