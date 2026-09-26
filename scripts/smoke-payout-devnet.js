@@ -17,7 +17,7 @@ const PAYMENT_MINT = new anchor.web3.PublicKey(
 );
 const RPC_URL = process.env.ADSPACES_DEVNET_RPC || "https://api.devnet.solana.com";
 const PRICE = 1_000_000n;
-const REVIEW_WINDOW_SECONDS = 48 * 60 * 60;
+const DEFAULT_REVIEW_WINDOW_SECONDS = 48 * 60 * 60;
 const STATE_PATH = path.join(__dirname, "..", ".anchor", "devnet-payout.json");
 
 function readKeypair(variable) {
@@ -126,7 +126,9 @@ async function start() {
         .rpc();
       writeState({
         buyerAta: buyerAta.toBase58(),
-        eligibleAt: candidateListing.deliveryDeadline.toNumber() + REVIEW_WINDOW_SECONDS,
+        eligibleAt:
+          candidateListing.deliveryDeadline.toNumber() +
+          candidateListing.reviewWindowSeconds.toNumber(),
         listing: candidate.account.listing.toBase58(),
         proof: candidateProof.toBase58(),
         sellerAta: sellerAta.toBase58(),
@@ -138,7 +140,9 @@ async function start() {
       console.log(`Proof: ${proofSignature}`);
       console.log(
         `Withdrawal eligible: ${new Date(
-          (candidateListing.deliveryDeadline.toNumber() + REVIEW_WINDOW_SECONDS) * 1000,
+          (candidateListing.deliveryDeadline.toNumber() +
+            candidateListing.reviewWindowSeconds.toNumber()) *
+            1000,
         ).toISOString()}`,
       );
       console.log("Devnet payout smoke test staged");
@@ -177,6 +181,7 @@ async function start() {
       new anchor.BN(listingDeadline),
       new anchor.BN(listingDeadline),
       new anchor.BN(deliveryDeadline),
+      new anchor.BN(DEFAULT_REVIEW_WINDOW_SECONDS),
       new anchor.BN(0),
       false,
       250,
@@ -232,7 +237,7 @@ async function start() {
     })
     .rpc();
 
-  const eligibleAt = deliveryDeadline + REVIEW_WINDOW_SECONDS;
+  const eligibleAt = deliveryDeadline + DEFAULT_REVIEW_WINDOW_SECONDS;
   writeState({
     buyerAta: buyerAta.toBase58(),
     eligibleAt,

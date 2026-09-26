@@ -86,6 +86,7 @@ async function main() {
       new anchor.BN(now + 3600),
       new anchor.BN(now + 7200),
       new anchor.BN(now + 10_800),
+      new anchor.BN(48 * 60 * 60),
       new anchor.BN(100_000),
       false,
       250,

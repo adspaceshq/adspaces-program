@@ -150,6 +150,7 @@ async function main() {
       new anchor.BN(listingDeadline),
       new anchor.BN(listingDeadline),
       new anchor.BN(deliveryDeadline),
+      new anchor.BN(48 * 60 * 60),
       new anchor.BN(0),
       false,
       250,
