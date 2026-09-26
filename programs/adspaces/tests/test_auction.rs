@@ -31,6 +31,7 @@ fn create_auction_listing(
             deadline: now + 30 * 86_400,
             artwork_close: now + 30 * 86_400,
             delivery_deadline: now + 37 * 86_400,
+            review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
             min_increment,
             double_up,
             fee_bps: adspaces::constants::PLATFORM_FEE_BPS,

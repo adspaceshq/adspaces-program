@@ -45,7 +45,7 @@ fn apply_bps(amount: u64, bps: u16) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constants::{MODE_AUCTION, MODE_FIXED};
+    use crate::constants::{DEFAULT_REVIEW_WINDOW_SECONDS, MODE_AUCTION, MODE_FIXED};
 
     fn listing(mode: u8, fee_bps: u16, uplift_fee_bps: u16, max_fee_bps: u16) -> Listing {
         Listing {
@@ -57,6 +57,7 @@ mod tests {
             deadline: 0,
             artwork_close: 0,
             delivery_deadline: 0,
+            review_window_seconds: DEFAULT_REVIEW_WINDOW_SECONDS,
             min_increment: 0,
             double_up: false,
             spot_count: 0,

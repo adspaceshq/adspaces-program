@@ -31,6 +31,22 @@ fn create_fixed_listing(
     slug_hash: [u8; 16],
     deadline: i64,
 ) -> Pubkey {
+    create_fixed_listing_with_review(
+        env,
+        seller,
+        slug_hash,
+        deadline,
+        adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
+    )
+}
+
+fn create_fixed_listing_with_review(
+    env: &mut Env,
+    seller: &Keypair,
+    slug_hash: [u8; 16],
+    deadline: i64,
+    review_window_seconds: i64,
+) -> Pubkey {
     let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
     let ix = new_ix(
         program_id(),
@@ -41,6 +57,7 @@ fn create_fixed_listing(
             deadline,
             artwork_close: deadline,
             delivery_deadline: deadline + 7 * 86_400,
+            review_window_seconds,
             min_increment: 0,
             double_up: false,
             fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
@@ -258,7 +275,7 @@ fn settle_balance(price: u64, donation: u64, slug_hash: [u8; 16]) -> (u64, u64) 
 
     env.warp_to_timestamp(now + 86_400);
     submit_proof(&mut env, &seller, &listing, &spot);
-    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS);
+    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS);
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
     let treasury = env.treasury;
     let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
@@ -381,7 +398,7 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
             submitted_at: read_spot(&env.svm, &spot).proof_submitted_at,
         },
     );
-    env.warp_to_timestamp(now + 37 * 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS);
+    env.warp_to_timestamp(now + 37 * 86_400 + adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS);
 
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
     let treasury = env.treasury;
@@ -646,7 +663,18 @@ fn proof_and_review_are_required_before_payout() {
     let seller = Keypair::new();
     env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
     let now = env.clock().unix_timestamp;
-    let listing = create_fixed_listing(&mut env, &seller, [24; 16], now + 86_400);
+    let review_window_seconds = 3 * 86_400;
+    let listing = create_fixed_listing_with_review(
+        &mut env,
+        &seller,
+        [24; 16],
+        now + 86_400,
+        review_window_seconds,
+    );
+    assert_eq!(
+        read_listing(&env.svm, &listing).review_window_seconds,
+        review_window_seconds
+    );
     let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
     let (buyer, buyer_ata) = env.new_user(PRICE);
     claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
@@ -668,7 +696,7 @@ fn proof_and_review_are_required_before_payout() {
     submit_proof(&mut env, &seller, &listing, &spot);
     let caller = Keypair::new();
     env.svm.airdrop(&caller.pubkey(), 10_000_000_000).unwrap();
-    env.warp_to_timestamp(now + 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS);
+    env.warp_to_timestamp(now + 86_400 + review_window_seconds);
     assert!(withdraw(
         &mut env,
         &caller,
@@ -684,7 +712,7 @@ fn proof_and_review_are_required_before_payout() {
     env.svm
         .airdrop(&later_caller.pubkey(), 10_000_000_000)
         .unwrap();
-    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS - 1);
+    env.warp_to_timestamp(now + 8 * 86_400 + review_window_seconds - 1);
     assert!(withdraw(
         &mut env,
         &later_caller,
@@ -696,7 +724,7 @@ fn proof_and_review_are_required_before_payout() {
         &treasury_ata
     )
     .is_err());
-    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS);
+    env.warp_to_timestamp(now + 8 * 86_400 + review_window_seconds);
     assert!(dispute(&mut env, &buyer, &listing, &spot).is_err());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 }
@@ -718,7 +746,9 @@ fn only_winner_can_dispute_and_block_payout() {
     let stranger = Keypair::new();
     env.svm.airdrop(&stranger.pubkey(), 10_000_000_000).unwrap();
     assert!(dispute(&mut env, &stranger, &listing, &spot).is_err());
-    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS / 2);
+    env.warp_to_timestamp(
+        now + 8 * 86_400 + adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS / 2,
+    );
     for (hash, uri) in [
         ([0; 32], "".to_string()),
         ([9; 32], "".to_string()),
@@ -761,7 +791,7 @@ fn only_winner_can_dispute_and_block_payout() {
             raised_at: env.clock().unix_timestamp,
         },
     );
-    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::REVIEW_WINDOW_SECONDS);
+    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS);
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
     let treasury = env.treasury;
     let treasury_ata = empty_token_account(&mut env, &seller, &treasury);

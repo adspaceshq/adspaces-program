@@ -16,6 +16,7 @@ fn create_listing(
     fee_bps: u16,
     uplift_fee_bps: u16,
     max_fee_bps: u16,
+    review_window_seconds: i64,
     slug_hash: [u8; 16],
 ) -> litesvm::types::TransactionResult {
     let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
@@ -29,6 +30,7 @@ fn create_listing(
             deadline: now + 86_400,
             artwork_close: now + 86_400,
             delivery_deadline: now + 2 * 86_400,
+            review_window_seconds,
             min_increment: if mode == adspaces::constants::MODE_AUCTION {
                 1
             } else {
@@ -80,6 +82,7 @@ fn listing_requires_the_configured_reviewer_signature() {
             250,
             0,
             250,
+            adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
             [41; 16],
         )
     }));
@@ -102,6 +105,7 @@ fn listing_rejects_an_unconfigured_reviewer() {
         250,
         0,
         250,
+        adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
         [42; 16],
     )
     .is_err());
@@ -123,6 +127,7 @@ fn fixed_listing_rejects_variable_fee_terms() {
         250,
         1_000,
         750,
+        adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
         [43; 16],
     )
     .is_err());
@@ -144,6 +149,7 @@ fn auction_listing_rejects_invalid_fee_ordering() {
         500,
         750,
         250,
+        adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
         [44; 16],
     )
     .is_err());
@@ -165,7 +171,55 @@ fn listing_rejects_a_base_fee_below_the_config_floor() {
         249,
         0,
         249,
+        adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
         [45; 16],
     )
     .is_err());
+}
+
+#[test]
+fn reviewer_sets_a_bounded_listing_review_window() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    let reviewer = copy_keypair(&env.mint_authority);
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+
+    let selected_window = 3 * 86_400;
+    create_listing(
+        &mut env,
+        &seller,
+        &reviewer,
+        true,
+        adspaces::constants::MODE_FIXED,
+        250,
+        0,
+        250,
+        selected_window,
+        [46; 16],
+    )
+    .unwrap();
+    let (listing, _) = listing_pda(&seller.pubkey(), &[46; 16]);
+    assert_eq!(
+        read_listing(&env.svm, &listing).review_window_seconds,
+        selected_window
+    );
+
+    for (window, slug_hash) in [
+        (adspaces::constants::MIN_REVIEW_WINDOW_SECONDS - 1, [47; 16]),
+        (adspaces::constants::MAX_REVIEW_WINDOW_SECONDS + 1, [48; 16]),
+    ] {
+        assert!(create_listing(
+            &mut env,
+            &seller,
+            &reviewer,
+            true,
+            adspaces::constants::MODE_FIXED,
+            250,
+            0,
+            250,
+            window,
+            slug_hash,
+        )
+        .is_err());
+    }
 }
