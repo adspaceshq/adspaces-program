@@ -12,6 +12,7 @@ pub mod review_authority;
 pub mod submit_proof;
 pub mod update_config;
 pub mod withdraw_seller;
+pub mod withdraw_dispute;
 
 pub use add_spot::*;
 pub use claim_spot::*;
@@ -27,3 +28,4 @@ pub use review_authority::*;
 pub use submit_proof::*;
 pub use update_config::*;
 pub use withdraw_seller::*;
+pub use withdraw_dispute::*;

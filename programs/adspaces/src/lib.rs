@@ -84,6 +84,10 @@ pub mod adspaces {
         instructions::raise_dispute::handle_raise_dispute(ctx, evidence_hash, evidence_uri)
     }
 
+    pub fn withdraw_dispute(ctx: Context<WithdrawDispute>) -> Result<()> {
+        instructions::withdraw_dispute::handle_withdraw_dispute(ctx)
+    }
+
     pub fn refund_spot(ctx: Context<RefundSpot>) -> Result<()> {
         instructions::refund_spot::handle_refund_spot(ctx)
     }

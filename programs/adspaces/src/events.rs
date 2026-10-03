@@ -123,6 +123,14 @@ pub struct DisputeRaised {
 }
 
 #[event]
+pub struct DisputeWithdrawn {
+    pub listing: Pubkey,
+    pub index: u8,
+    pub dispute: Pubkey,
+    pub buyer: Pubkey,
+}
+
+#[event]
 pub struct DisputeResolved {
     pub listing: Pubkey,
     pub index: u8,
