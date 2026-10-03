@@ -335,6 +335,28 @@ fn dispute_with_evidence(
     send(&mut env.svm, &[ix], buyer, &[])
 }
 
+#[allow(clippy::result_large_err)]
+fn withdraw_dispute(
+    env: &mut Env,
+    buyer: &Keypair,
+    listing: &Pubkey,
+    spot: &Pubkey,
+) -> litesvm::types::TransactionResult {
+    let (dispute, _) = dispute_pda(spot);
+    let ix = new_ix(
+        program_id(),
+        adspaces::instruction::WithdrawDispute {}.data(),
+        adspaces::accounts::WithdrawDispute {
+            buyer: buyer.pubkey(),
+            listing: *listing,
+            spot: *spot,
+            dispute,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[ix], buyer, &[])
+}
+
 #[test]
 fn withdraw_before_deadline_fails() {
     let mut env = Env::new();
@@ -937,6 +959,125 @@ fn only_winner_can_dispute_and_block_payout() {
     assert!(env.svm.get_account(&vault).is_none());
     env.svm.expire_blockhash();
     assert!(send(&mut env.svm, &[resolve], &env.mint_authority, &[]).is_err());
+}
+
+#[test]
+fn buyer_can_withdraw_dispute_and_restore_funded_spot() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [31; 16], now + 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+    env.warp_to_timestamp(now + 86_400);
+    submit_proof(&mut env, &seller, &listing, &spot);
+    env.warp_to_timestamp(
+        now + 8 * 86_400 + adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS / 2,
+    );
+    dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    let (dispute_record, _) = dispute_pda(&spot);
+    assert!(env.svm.get_account(&dispute_record).is_some());
+    assert_eq!(
+        read_spot(&env.svm, &spot).status,
+        adspaces::constants::SPOT_DISPUTED
+    );
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+
+    let meta = withdraw_dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    assert_event(
+        &meta,
+        &adspaces::events::DisputeWithdrawn {
+            listing,
+            index: 0,
+            dispute: dispute_record,
+            buyer: buyer.pubkey(),
+        },
+    );
+    assert!(env.svm.get_account(&dispute_record).is_none());
+    assert_eq!(
+        read_spot(&env.svm, &spot).status,
+        adspaces::constants::SPOT_FUNDED
+    );
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+
+    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS);
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
+    let treasury = env.treasury;
+    let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
+    withdraw(
+        &mut env,
+        &seller,
+        &seller.pubkey(),
+        &listing,
+        &spot,
+        &vault,
+        &seller_ata,
+        &treasury_ata,
+    )
+    .unwrap();
+}
+
+#[test]
+fn dispute_withdrawal_rejects_non_buyer_and_resolved_disputes() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [32; 16], now + 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+    env.warp_to_timestamp(now + 86_400);
+    submit_proof(&mut env, &seller, &listing, &spot);
+    env.warp_to_timestamp(
+        now + 8 * 86_400 + adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS / 2,
+    );
+    dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    let stranger = Keypair::new();
+    env.svm.airdrop(&stranger.pubkey(), 10_000_000_000).unwrap();
+    assert!(withdraw_dispute(&mut env, &stranger, &listing, &spot).is_err());
+    assert!(withdraw_dispute(&mut env, &seller, &listing, &spot).is_err());
+    assert_eq!(
+        read_spot(&env.svm, &spot).status,
+        adspaces::constants::SPOT_DISPUTED
+    );
+
+    let (dispute_record, _) = dispute_pda(&spot);
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
+    let treasury = env.treasury;
+    let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
+    let resolve = new_ix(
+        program_id(),
+        adspaces::instruction::ResolveDispute {
+            seller_share_bps: 10_000,
+            decision_hash: [8; 32],
+            decision_uri: DECISION_URI.to_string(),
+        }
+        .data(),
+        adspaces::accounts::ResolveDispute {
+            resolver: env.mint_authority.pubkey(),
+            config: env.config,
+            listing,
+            spot,
+            dispute: dispute_record,
+            vault,
+            seller_ata,
+            seller: seller.pubkey(),
+            buyer_ata,
+            treasury_ata,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[resolve], &env.mint_authority, &[]).unwrap();
+    assert!(withdraw_dispute(&mut env, &buyer, &listing, &spot).is_err());
+    assert_eq!(
+        read_spot(&env.svm, &spot).status,
+        adspaces::constants::SPOT_FINALIZED
+    );
 }
 
 #[test]
