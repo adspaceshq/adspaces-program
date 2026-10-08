@@ -92,4 +92,6 @@ pub enum AdspacesError {
     ProtocolPaused,
     #[msg("Seller cannot buy or bid on their own listing.")]
     SelfDealing,
+    #[msg("Dispute has not timed out yet.")]
+    DisputeNotTimedOut,
 }

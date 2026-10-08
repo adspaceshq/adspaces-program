@@ -96,6 +96,10 @@ pub mod adspaces {
         instructions::refund_spot::handle_refund_spot(ctx)
     }
 
+    pub fn timeout_dispute(ctx: Context<TimeoutDispute>) -> Result<()> {
+        instructions::timeout_dispute::handle_timeout_dispute(ctx)
+    }
+
     pub fn resolve_dispute(
         ctx: Context<ResolveDispute>,
         seller_share_bps: u16,

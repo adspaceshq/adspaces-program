@@ -83,3 +83,11 @@ pub const MIN_REVIEW_WINDOW_SECONDS: i64 = 60 * 60;
 
 #[constant]
 pub const MAX_REVIEW_WINDOW_SECONDS: i64 = 30 * 24 * 60 * 60;
+
+#[constant]
+#[cfg(feature = "devnet-short-review")]
+pub const DISPUTE_TIMEOUT_SECONDS: i64 = 300;
+
+#[constant]
+#[cfg(not(feature = "devnet-short-review"))]
+pub const DISPUTE_TIMEOUT_SECONDS: i64 = 14 * 24 * 60 * 60;

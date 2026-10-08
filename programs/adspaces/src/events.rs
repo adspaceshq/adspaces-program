@@ -150,6 +150,15 @@ pub struct ListingClosed {
 }
 
 #[event]
+pub struct DisputeTimedOut {
+    pub listing: Pubkey,
+    pub index: u8,
+    pub dispute: Pubkey,
+    pub buyer: Pubkey,
+    pub amount: u64,
+}
+
+#[event]
 pub struct SpotRefunded {
     pub listing: Pubkey,
     pub index: u8,
