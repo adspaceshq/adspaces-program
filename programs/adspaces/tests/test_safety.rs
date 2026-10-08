@@ -312,6 +312,7 @@ fn timed_out_dispute_refunds_buyer_in_full() {
         adspaces::instruction::TimeoutDispute {}.data(),
         adspaces::accounts::TimeoutDispute {
             caller: caller.pubkey(),
+            config: env.config,
             listing,
             seller: seller.pubkey(),
             spot,
@@ -324,11 +325,11 @@ fn timed_out_dispute_refunds_buyer_in_full() {
         }
         .to_account_metas(None),
     );
-    env.warp_to_timestamp(opened_at + adspaces::constants::DISPUTE_TIMEOUT_SECONDS - 1);
+    env.warp_to_timestamp(opened_at + adspaces::constants::DEFAULT_DISPUTE_TIMEOUT_SECONDS - 1);
     assert!(send(&mut env.svm, &[timeout.clone()], &caller, &[]).is_err());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 
-    env.warp_to_timestamp(opened_at + adspaces::constants::DISPUTE_TIMEOUT_SECONDS);
+    env.warp_to_timestamp(opened_at + adspaces::constants::DEFAULT_DISPUTE_TIMEOUT_SECONDS);
     env.svm.expire_blockhash();
     send(&mut env.svm, &[timeout], &caller, &[]).unwrap();
     assert_eq!(token_balance(&env.svm, &buyer_ata), PRICE);
@@ -342,7 +343,7 @@ fn migrate_config_upgrades_legacy_layout() {
     let mut env = Env::new();
     let mut account = env.svm.get_account(&env.config).unwrap();
     let new_len = account.data.len();
-    account.data.truncate(new_len - 1);
+    account.data.truncate(new_len - 8);
     env.svm.set_account(env.config, account).unwrap();
 
     let config_key = env.config;
@@ -368,6 +369,10 @@ fn migrate_config_upgrades_legacy_layout() {
     assert!(!config.paused);
     assert_eq!(config.authority, authority.pubkey());
     assert_eq!(config.fee_bps, 250);
+    assert_eq!(
+        config.dispute_timeout_seconds,
+        adspaces::constants::DEFAULT_DISPUTE_TIMEOUT_SECONDS
+    );
 
     let seller = new_seller(&mut env);
     let now = env.clock().unix_timestamp;
@@ -411,4 +416,34 @@ fn late_bid_extends_auction_deadline() {
         read_listing(&env.svm, &listing).deadline,
         deadline + adspaces::constants::SNIPE_EXTENSION_SECONDS
     );
+}
+
+#[allow(clippy::result_large_err)]
+fn set_timeout(env: &mut Env, signer: &Keypair, seconds: i64) -> litesvm::types::TransactionResult {
+    let ix = new_ix(
+        program_id(),
+        adspaces::instruction::SetDisputeTimeout { seconds }.data(),
+        adspaces::accounts::SetDisputeTimeout {
+            authority: signer.pubkey(),
+            config: env.config,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[ix], signer, &[])
+}
+
+#[test]
+fn dispute_timeout_is_configurable_within_bounds() {
+    let mut env = Env::new();
+    assert_eq!(
+        read_config(&env.svm, &env.config).dispute_timeout_seconds,
+        adspaces::constants::DEFAULT_DISPUTE_TIMEOUT_SECONDS
+    );
+    let authority = env.mint_authority.insecure_clone();
+    let stranger = new_seller(&mut env);
+    assert!(set_timeout(&mut env, &stranger, 2 * DAY).is_err());
+    assert!(set_timeout(&mut env, &authority, adspaces::constants::MIN_DISPUTE_TIMEOUT_SECONDS - 1).is_err());
+    assert!(set_timeout(&mut env, &authority, adspaces::constants::MAX_DISPUTE_TIMEOUT_SECONDS + 1).is_err());
+    set_timeout(&mut env, &authority, 2 * DAY).unwrap();
+    assert_eq!(read_config(&env.svm, &env.config).dispute_timeout_seconds, 2 * DAY);
 }
