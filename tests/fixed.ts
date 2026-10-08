@@ -98,6 +98,7 @@ describe("fixed-price spots", () => {
       .addSpot(price)
       .accountsStrict({
         seller: wallet.publicKey,
+        config,
         listing,
         spot,
         vault,
@@ -114,6 +115,7 @@ describe("fixed-price spots", () => {
       .claimSpot()
       .accountsStrict({
         buyer: buyer.publicKey,
+        config,
         listing,
         spot,
         vault,
@@ -138,6 +140,7 @@ describe("fixed-price spots", () => {
         .claimSpot()
         .accountsStrict({
           buyer: buyer.publicKey,
+          config,
           listing,
           spot,
           vault,

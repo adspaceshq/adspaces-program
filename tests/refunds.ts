@@ -103,6 +103,7 @@ describe("funded spot refunds", () => {
       .addSpot(new anchor.BN(Number(price)))
       .accountsStrict({
         seller: wallet.publicKey,
+        config,
         listing,
         spot,
         vault,
@@ -116,6 +117,7 @@ describe("funded spot refunds", () => {
       .claimSpot()
       .accountsStrict({
         buyer: buyer.publicKey,
+        config,
         listing,
         spot,
         vault,
@@ -145,7 +147,7 @@ describe("funded spot refunds", () => {
       })
       .rpc();
     expect((await getAccount(provider.connection, buyerAta)).amount).to.equal(price);
-    expect((await program.account.spot.fetch(spot)).status).to.equal(3);
+    expect(await provider.connection.getAccountInfo(spot)).to.equal(null);
     expect(await provider.connection.getAccountInfo(vault)).to.equal(null);
   });
 
@@ -192,7 +194,7 @@ describe("funded spot refunds", () => {
     }
     await refund();
     expect((await getAccount(provider.connection, buyerAta)).amount).to.equal(price);
-    expect((await program.account.spot.fetch(spot)).status).to.equal(3);
+    expect(await provider.connection.getAccountInfo(spot)).to.equal(null);
     expect(await provider.connection.getAccountInfo(vault)).to.equal(null);
   });
 });

@@ -154,6 +154,7 @@ describe("dispute lifecycle", () => {
       .addSpot(new anchor.BN(Number(price)))
       .accountsStrict({
         seller: wallet.publicKey,
+        config,
         listing,
         spot,
         vault,
@@ -167,6 +168,7 @@ describe("dispute lifecycle", () => {
       .claimSpot()
       .accountsStrict({
         buyer: buyer.publicKey,
+        config,
         listing,
         spot,
         vault,
@@ -231,6 +233,7 @@ describe("dispute lifecycle", () => {
           config,
           listing,
           spot,
+          proof,
           dispute,
           vault,
           sellerAta,
@@ -248,12 +251,8 @@ describe("dispute lifecycle", () => {
     const feeBps = (await program.account.listing.fetch(listing)).feeBps;
     const sellerGross = price / 2n;
     const fee = (sellerGross * BigInt(feeBps)) / 10_000n;
-    const decision = await program.account.disputeRecord.fetch(dispute);
-    expect(decision.decisionUri).to.equal("ipfs://adspaces-validator-decision");
-    expect(decision.sellerShareBps).to.equal(5_000);
-    expect(decision.buyerRefund.toString()).to.equal(sellerGross.toString());
-    expect(decision.sellerAmount.toString()).to.equal((sellerGross - fee).toString());
-    expect(decision.fee.toString()).to.equal(fee.toString());
+    expect(await provider.connection.getAccountInfo(dispute)).to.equal(null);
+    expect(await provider.connection.getAccountInfo(proof)).to.equal(null);
     expect((await getAccount(provider.connection, buyerAta)).amount).to.equal(sellerGross);
     expect((await getAccount(provider.connection, sellerAta)).amount - sellerBefore).to.equal(
       sellerGross - fee,
@@ -261,7 +260,7 @@ describe("dispute lifecycle", () => {
     expect((await getAccount(provider.connection, treasuryAta)).amount - treasuryBefore).to.equal(
       fee,
     );
-    expect((await program.account.spot.fetch(spot)).status).to.equal(2);
+    expect(await provider.connection.getAccountInfo(spot)).to.equal(null);
     expect(await provider.connection.getAccountInfo(vault)).to.equal(null);
     await expectRejected(() =>
       resolveDispute(Array(32).fill(3), "ipfs://adspaces-validator-decision"),
@@ -366,6 +365,7 @@ describe("dispute lifecycle", () => {
       .addSpot(new anchor.BN(100_000_000))
       .accountsStrict({
         seller: wallet.publicKey,
+        config,
         listing: auctionListing,
         spot: auctionSpot,
         vault: auctionVault,
@@ -379,6 +379,7 @@ describe("dispute lifecycle", () => {
       .placeBid(new anchor.BN(100_000_000))
       .accountsStrict({
         bidder: alice.publicKey,
+        config,
         listing: auctionListing,
         spot: auctionSpot,
         vault: auctionVault,
@@ -393,6 +394,7 @@ describe("dispute lifecycle", () => {
       .placeBid(new anchor.BN(110_000_000))
       .accountsStrict({
         bidder: bob.publicKey,
+        config,
         listing: auctionListing,
         spot: auctionSpot,
         vault: auctionVault,
@@ -449,6 +451,7 @@ describe("dispute lifecycle", () => {
         config,
         listing: auctionListing,
         spot: auctionSpot,
+        proof: null,
         dispute: auctionDispute,
         vault: auctionVault,
         sellerAta,
@@ -459,13 +462,11 @@ describe("dispute lifecycle", () => {
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .rpc();
-    const decision = await program.account.disputeRecord.fetch(auctionDispute);
-    expect(decision.sellerShareBps).to.equal(0);
-    expect(decision.buyerRefund.toString()).to.equal("110000000");
+    expect(await provider.connection.getAccountInfo(auctionDispute)).to.equal(null);
     expect((await getAccount(provider.connection, bobAta)).amount).to.equal(500_000_000n);
     expect((await getAccount(provider.connection, sellerAta)).amount).to.equal(sellerBefore);
     expect((await getAccount(provider.connection, treasuryAta)).amount).to.equal(treasuryBefore);
-    expect((await program.account.spot.fetch(auctionSpot)).status).to.equal(2);
+    expect(await provider.connection.getAccountInfo(auctionSpot)).to.equal(null);
     expect(await provider.connection.getAccountInfo(auctionVault)).to.equal(null);
   });
 });

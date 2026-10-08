@@ -111,6 +111,7 @@ describe("auction spots", () => {
       .addSpot(startPrice)
       .accountsStrict({
         seller: wallet.publicKey,
+        config,
         listing,
         spot,
         vault,
@@ -127,6 +128,7 @@ describe("auction spots", () => {
       .placeBid(startPrice)
       .accountsStrict({
         bidder: alice.publicKey,
+        config,
         listing,
         spot,
         vault,
@@ -150,6 +152,7 @@ describe("auction spots", () => {
         .placeBid(startPrice.add(increment).subn(1))
         .accountsStrict({
           bidder: bob.publicKey,
+          config,
           listing,
           spot,
           vault,
@@ -170,6 +173,7 @@ describe("auction spots", () => {
       .placeBid(nextBid)
       .accountsStrict({
         bidder: bob.publicKey,
+        config,
         listing,
         spot,
         vault,
@@ -267,6 +271,7 @@ describe("auction spots", () => {
       .addSpot(startPrice)
       .accountsStrict({
         seller: wallet.publicKey,
+        config,
         listing: doubleListing,
         spot: doubleSpot,
         vault: doubleVault,
@@ -280,6 +285,7 @@ describe("auction spots", () => {
       .placeBid(startPrice)
       .accountsStrict({
         bidder: first.publicKey,
+        config,
         listing: doubleListing,
         spot: doubleSpot,
         vault: doubleVault,
@@ -297,6 +303,7 @@ describe("auction spots", () => {
         .placeBid(new anchor.BN(150_000_000))
         .accountsStrict({
           bidder: second.publicKey,
+          config,
           listing: doubleListing,
           spot: doubleSpot,
           vault: doubleVault,
@@ -316,6 +323,7 @@ describe("auction spots", () => {
       .placeBid(new anchor.BN(200_000_000))
       .accountsStrict({
         bidder: second.publicKey,
+        config,
         listing: doubleListing,
         spot: doubleSpot,
         vault: doubleVault,

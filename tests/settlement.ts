@@ -42,6 +42,10 @@ describe("spot settlement", () => {
     [Buffer.from("vault"), spot.toBuffer()],
     program.programId,
   );
+  const [proof] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("proof"), spot.toBuffer()],
+    program.programId,
+  );
   let paymentMint: anchor.web3.PublicKey;
   let treasury: anchor.web3.PublicKey;
   let buyerAta: anchor.web3.PublicKey;
@@ -124,6 +128,7 @@ describe("spot settlement", () => {
       .addSpot(price)
       .accountsStrict({
         seller: wallet.publicKey,
+        config,
         listing,
         spot,
         vault,
@@ -137,6 +142,7 @@ describe("spot settlement", () => {
       .claimSpot()
       .accountsStrict({
         buyer: buyer.publicKey,
+        config,
         listing,
         spot,
         vault,
@@ -170,6 +176,7 @@ describe("spot settlement", () => {
         listing,
         seller: wallet.publicKey,
         spot,
+        proof,
         vault,
         sellerAta,
         treasuryAta,
