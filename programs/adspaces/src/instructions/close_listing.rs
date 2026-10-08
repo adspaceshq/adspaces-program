@@ -7,6 +7,7 @@ use crate::{
     state::Listing,
 };
 
+/// Remaining accounts: every spot PDA of the listing, in index order.
 #[derive(Accounts)]
 pub struct CloseListing<'info> {
     #[account(mut)]
@@ -26,6 +27,23 @@ pub fn handle_close_listing(ctx: Context<CloseListing>) -> Result<()> {
     require!(now >= ctx.accounts.listing.deadline, AdspacesError::ListingStillActive);
 
     let listing_key = ctx.accounts.listing.key();
+    let spot_count = ctx.accounts.listing.spot_count as usize;
+    require!(
+        ctx.remaining_accounts.len() == spot_count,
+        AdspacesError::ListingHasActiveSpots
+    );
+    for (index, spot) in ctx.remaining_accounts.iter().enumerate() {
+        let (expected, _) = Pubkey::find_program_address(
+            &[SPOT_SEED, listing_key.as_ref(), &[index as u8]],
+            ctx.program_id,
+        );
+        require_keys_eq!(spot.key(), expected, AdspacesError::ListingHasActiveSpots);
+        require!(
+            spot.data_is_empty() && spot.lamports() == 0,
+            AdspacesError::ListingHasActiveSpots
+        );
+    }
+
     ctx.accounts.listing.status = LISTING_CLOSED;
 
     emit!(ListingClosed {
