@@ -46,6 +46,7 @@ async function main() {
   console.log(`Treasury: ${stored.treasury}`);
   console.log(`Fee: ${stored.feeBps} bps`);
   console.log(`Paused: ${stored.paused}`);
+  console.log(`Dispute timeout: ${stored.disputeTimeoutSeconds} seconds`);
 }
 
 main().catch((error) => {
