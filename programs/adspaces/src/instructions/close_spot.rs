@@ -54,13 +54,14 @@ pub fn handle_close_spot(ctx: Context<CloseSpot>) -> Result<()> {
         signer_seeds,
     ))?;
 
-    let spot = &mut ctx.accounts.spot;
-    spot.status = SPOT_CANCELLED;
+    ctx.accounts.spot.status = SPOT_CANCELLED;
 
     emit!(SpotClosed {
         listing: listing_key,
         index: spot_index,
     });
+
+    ctx.accounts.spot.close(ctx.accounts.seller.to_account_info())?;
 
     Ok(())
 }

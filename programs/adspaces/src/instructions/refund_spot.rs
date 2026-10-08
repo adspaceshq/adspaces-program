@@ -85,6 +85,7 @@ pub fn handle_refund_spot(ctx: Context<RefundSpot>) -> Result<()> {
         signer_seeds,
     ))?;
     ctx.accounts.spot.status = SPOT_CANCELLED;
+
     emit!(SpotRefunded {
         listing: listing_key,
         index,
@@ -92,5 +93,8 @@ pub fn handle_refund_spot(ctx: Context<RefundSpot>) -> Result<()> {
         amount,
         seller_initiated,
     });
+
+    ctx.accounts.spot.close(ctx.accounts.seller.to_account_info())?;
+
     Ok(())
 }

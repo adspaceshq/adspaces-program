@@ -6,7 +6,7 @@ use crate::{
     error::AdspacesError,
     events::DisputeResolved,
     fees::calculate_dispute_fee,
-    state::{Config, DisputeRecord, Listing, Spot},
+    state::{Config, DisputeRecord, Listing, ProofRecord, Spot},
 };
 
 #[derive(Accounts)]
@@ -61,6 +61,13 @@ pub struct ResolveDispute<'info> {
         constraint = treasury_ata.mint == listing.mint @ AdspacesError::InvalidMint,
     )]
     pub treasury_ata: Box<Account<'info, TokenAccount>>,
+    #[account(
+        mut,
+        seeds = [PROOF_SEED, spot.key().as_ref()],
+        bump = proof.bump,
+        constraint = proof.spot == spot.key() @ AdspacesError::Unauthorized,
+    )]
+    pub proof: Option<Box<Account<'info, ProofRecord>>>,
     #[account(constraint = usdc_mint.key() == listing.mint @ AdspacesError::InvalidMint)]
     pub usdc_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
@@ -137,10 +144,12 @@ pub fn handle_resolve_dispute(
     dispute.seller_amount = seller_net;
     dispute.fee = fee;
     ctx.accounts.spot.status = SPOT_FINALIZED;
+
+    let dispute_key = ctx.accounts.dispute.key();
     emit!(DisputeResolved {
         listing: listing_key,
         index,
-        dispute: dispute.key(),
+        dispute: dispute_key,
         resolver: ctx.accounts.resolver.key(),
         decision_hash,
         seller_share_bps,
@@ -148,5 +157,12 @@ pub fn handle_resolve_dispute(
         seller_amount: seller_net,
         fee,
     });
+
+    if let Some(ref proof) = ctx.accounts.proof {
+        proof.close(ctx.accounts.seller.to_account_info())?;
+    }
+    ctx.accounts.dispute.close(ctx.accounts.seller.to_account_info())?;
+    ctx.accounts.spot.close(ctx.accounts.seller.to_account_info())?;
+
     Ok(())
 }

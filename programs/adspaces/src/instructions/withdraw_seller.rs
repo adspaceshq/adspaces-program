@@ -6,7 +6,7 @@ use crate::{
     error::AdspacesError,
     events::SellerWithdrawn,
     fees::calculate_fee,
-    state::{Listing, Spot},
+    state::{Listing, ProofRecord, Spot},
 };
 
 #[derive(Accounts)]
@@ -46,6 +46,13 @@ pub struct WithdrawSeller<'info> {
         constraint = treasury_ata.mint == listing.mint @ AdspacesError::InvalidMint,
     )]
     pub treasury_ata: Box<Account<'info, TokenAccount>>,
+    #[account(
+        mut,
+        seeds = [PROOF_SEED, spot.key().as_ref()],
+        bump = proof.bump,
+        constraint = proof.spot == spot.key() @ AdspacesError::Unauthorized,
+    )]
+    pub proof: Box<Account<'info, ProofRecord>>,
     #[account(
         constraint = usdc_mint.key() == listing.mint @ AdspacesError::InvalidMint
     )]
@@ -123,8 +130,7 @@ pub fn handle_withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
         signer_seeds,
     ))?;
 
-    let spot = &mut ctx.accounts.spot;
-    spot.status = SPOT_FINALIZED;
+    ctx.accounts.spot.status = SPOT_FINALIZED;
 
     emit!(SellerWithdrawn {
         listing: ctx.accounts.listing.key(),
@@ -133,6 +139,9 @@ pub fn handle_withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
         amount: seller_amount,
         fee,
     });
+
+    ctx.accounts.proof.close(ctx.accounts.seller.to_account_info())?;
+    ctx.accounts.spot.close(ctx.accounts.seller.to_account_info())?;
 
     Ok(())
 }
