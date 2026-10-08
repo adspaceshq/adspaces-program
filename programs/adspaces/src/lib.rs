@@ -110,6 +110,10 @@ pub mod adspaces {
         )
     }
 
+    pub fn pause_protocol(ctx: Context<PauseProtocol>, paused: bool) -> Result<()> {
+        instructions::pause_protocol::handle_pause_protocol(ctx, paused)
+    }
+
     pub fn place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
         instructions::place_bid::handle_place_bid(ctx, amount)
     }

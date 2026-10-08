@@ -88,4 +88,6 @@ pub enum AdspacesError {
     ListingHasActiveSpots,
     #[msg("Listing deadline has not passed yet.")]
     ListingStillActive,
+    #[msg("Protocol is paused.")]
+    ProtocolPaused,
 }

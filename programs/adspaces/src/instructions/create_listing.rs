@@ -22,7 +22,11 @@ pub struct CreateListing<'info> {
         bump
     )]
     pub listing: Account<'info, Listing>,
-    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    #[account(
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        constraint = !config.paused @ AdspacesError::ProtocolPaused,
+    )]
     pub config: Account<'info, Config>,
     #[account(
         seeds = [REVIEW_AUTHORITY_SEED, config.key().as_ref()],

@@ -5,7 +5,7 @@ use crate::{
     constants::*,
     error::AdspacesError,
     events::{BidPlaced, BidRefunded},
-    state::{Listing, Spot},
+    state::{Config, Listing, Spot},
 };
 
 #[derive(Accounts)]
@@ -18,7 +18,7 @@ pub struct PlaceBid<'info> {
         constraint = listing.status == LISTING_OPEN @ AdspacesError::ListingNotOpen,
         constraint = listing.mode == MODE_AUCTION @ AdspacesError::WrongMode,
     )]
-    pub listing: Account<'info, Listing>,
+    pub listing: Box<Account<'info, Listing>>,
     #[account(
         mut,
         seeds = [SPOT_SEED, listing.key().as_ref(), &[spot.index]],
@@ -26,7 +26,7 @@ pub struct PlaceBid<'info> {
         constraint = spot.listing == listing.key() @ AdspacesError::Unauthorized,
         constraint = spot.status == SPOT_OPEN || spot.status == SPOT_FUNDED @ AdspacesError::SpotNotOpen,
     )]
-    pub spot: Account<'info, Spot>,
+    pub spot: Box<Account<'info, Spot>>,
     #[account(
         mut,
         constraint = vault.key() == spot.vault @ AdspacesError::Unauthorized,
@@ -44,6 +44,12 @@ pub struct PlaceBid<'info> {
     /// pass the program id as a placeholder for the opening bid.
     #[account(mut)]
     pub prev_bidder_ata: Option<Account<'info, TokenAccount>>,
+    #[account(
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        constraint = !config.paused @ AdspacesError::ProtocolPaused,
+    )]
+    pub config: Account<'info, Config>,
     #[account(
         constraint = usdc_mint.key() == listing.mint @ AdspacesError::InvalidMint
     )]

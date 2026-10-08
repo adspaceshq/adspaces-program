@@ -9,6 +9,7 @@ pub struct Config {
     pub payment_mint: Pubkey,
     pub treasury: Pubkey,
     pub fee_bps: u16,
+    pub paused: bool,
     pub bump: u8,
 }
 

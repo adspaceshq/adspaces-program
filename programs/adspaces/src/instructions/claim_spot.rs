@@ -5,7 +5,7 @@ use crate::{
     constants::*,
     error::AdspacesError,
     events::SpotClaimed,
-    state::{Listing, Spot},
+    state::{Config, Listing, Spot},
 };
 
 #[derive(Accounts)]
@@ -40,6 +40,12 @@ pub struct ClaimSpot<'info> {
         token::authority = buyer,
     )]
     pub buyer_ata: Account<'info, TokenAccount>,
+    #[account(
+        seeds = [CONFIG_SEED],
+        bump = config.bump,
+        constraint = !config.paused @ AdspacesError::ProtocolPaused,
+    )]
+    pub config: Account<'info, Config>,
     #[account(
         constraint = usdc_mint.key() == listing.mint @ AdspacesError::InvalidMint
     )]

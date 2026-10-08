@@ -39,6 +39,7 @@ pub fn handle_initialize_config(
     config.payment_mint = ctx.accounts.payment_mint.key();
     config.treasury = treasury;
     config.fee_bps = fee_bps;
+    config.paused = false;
     config.bump = ctx.bumps.config;
 
     emit!(ConfigInitialized {
