@@ -40,6 +40,7 @@ pub fn handle_initialize_config(
     config.treasury = treasury;
     config.fee_bps = fee_bps;
     config.paused = false;
+    config.dispute_timeout_seconds = crate::constants::DEFAULT_DISPUTE_TIMEOUT_SECONDS;
     config.bump = ctx.bumps.config;
 
     emit!(ConfigInitialized {

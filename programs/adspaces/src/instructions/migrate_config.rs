@@ -1,6 +1,10 @@
 use anchor_lang::{prelude::*, system_program};
 
-use crate::{constants::CONFIG_SEED, error::AdspacesError, state::Config};
+use crate::{
+    constants::{CONFIG_SEED, DEFAULT_DISPUTE_TIMEOUT_SECONDS},
+    error::AdspacesError,
+    state::Config,
+};
 
 const CONFIG_AUTHORITY_OFFSET: usize = 8;
 
@@ -44,5 +48,10 @@ pub fn handle_migrate_config(ctx: Context<MigrateConfig>) -> Result<()> {
         )?;
     }
     config.resize(new_len)?;
+    // New trailing bytes are zeroed: `paused` reads as false, but a zero timeout would let
+    // every dispute time out instantly, so seed the default.
+    let timeout_offset = new_len - 8;
+    config.try_borrow_mut_data()?[timeout_offset..new_len]
+        .copy_from_slice(&DEFAULT_DISPUTE_TIMEOUT_SECONDS.to_le_bytes());
     Ok(())
 }

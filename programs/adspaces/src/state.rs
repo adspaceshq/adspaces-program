@@ -12,6 +12,8 @@ pub struct Config {
     pub bump: u8,
     /// Appended after `bump` so pre-pause config accounts migrate by realloc alone.
     pub paused: bool,
+    /// Appended last; how long an unresolved dispute stays open before the buyer can be refunded.
+    pub dispute_timeout_seconds: i64,
 }
 
 #[account]
