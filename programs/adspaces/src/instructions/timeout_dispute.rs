@@ -5,12 +5,14 @@ use crate::{
     constants::*,
     error::AdspacesError,
     events::DisputeTimedOut,
-    state::{DisputeRecord, Listing, ProofRecord, Spot},
+    state::{Config, DisputeRecord, Listing, ProofRecord, Spot},
 };
 
 #[derive(Accounts)]
 pub struct TimeoutDispute<'info> {
     pub caller: Signer<'info>,
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
     #[account(
         seeds = [LISTING_SEED, listing.seller.as_ref(), listing.slug_hash.as_ref()],
         bump = listing.bump,
@@ -65,7 +67,7 @@ pub fn handle_timeout_dispute(ctx: Context<TimeoutDispute>) -> Result<()> {
         .accounts
         .dispute
         .opened_at
-        .checked_add(DISPUTE_TIMEOUT_SECONDS)
+        .checked_add(ctx.accounts.config.dispute_timeout_seconds)
         .ok_or(AdspacesError::MathOverflow)?;
     require!(now >= timeout_at, AdspacesError::DisputeNotTimedOut);
 
