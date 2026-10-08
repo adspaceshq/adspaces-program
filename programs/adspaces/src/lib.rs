@@ -114,6 +114,10 @@ pub mod adspaces {
         )
     }
 
+    pub fn migrate_config(ctx: Context<MigrateConfig>) -> Result<()> {
+        instructions::migrate_config::handle_migrate_config(ctx)
+    }
+
     pub fn pause_protocol(ctx: Context<PauseProtocol>, paused: bool) -> Result<()> {
         instructions::pause_protocol::handle_pause_protocol(ctx, paused)
     }
