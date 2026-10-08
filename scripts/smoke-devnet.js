@@ -102,6 +102,7 @@ async function main() {
     .addSpot(new anchor.BN(PRICE.toString()))
     .accountsStrict({
       seller: seller.publicKey,
+      config,
       listing,
       spot,
       vault,
@@ -116,6 +117,7 @@ async function main() {
     .claimSpot()
     .accountsStrict({
       buyer: buyer.publicKey,
+      config,
       listing,
       spot,
       vault,
@@ -143,12 +145,12 @@ async function main() {
     })
     .rpc();
 
-  const storedSpot = await program.account.spot.fetch(spot);
   const endingBalance = (await getAccount(connection, buyerAta)).amount;
-  if (storedSpot.status !== 3 || endingBalance !== startingBalance) {
-    throw new Error("Refund did not restore the buyer balance and cancel the spot");
+  if (endingBalance !== startingBalance) {
+    throw new Error("Refund did not restore the buyer balance");
   }
   if (await connection.getAccountInfo(vault)) throw new Error("Vault was not closed after refund");
+  if (await connection.getAccountInfo(spot)) throw new Error("Spot was not closed after refund");
 
   console.log(`Listing: ${listing}`);
   console.log(`Spot: ${spot}`);

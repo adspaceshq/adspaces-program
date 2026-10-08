@@ -92,6 +92,10 @@ async function main() {
     const pendingListing = await program.account.listing.fetch(pendingSpot.listing);
     if (!pendingListing.seller.equals(seller.publicKey) || pendingSpot.status !== 4) continue;
 
+    const [pendingProof] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("proof"), pending.account.spot.toBuffer()],
+      PROGRAM_ID,
+    );
     const signature = await program.methods
       .resolveDispute(5_000, Array(32).fill(3), "https://adspaces.fun/devnet-decision")
       .accountsStrict({
@@ -99,6 +103,7 @@ async function main() {
         config,
         listing: pendingSpot.listing,
         spot: pending.account.spot,
+        proof: pending.account.proofSubmitted ? pendingProof : null,
         dispute: pending.publicKey,
         vault: pendingSpot.vault,
         sellerAta,
@@ -171,6 +176,7 @@ async function main() {
     .addSpot(new anchor.BN(PRICE.toString()))
     .accountsStrict({
       seller: seller.publicKey,
+      config,
       listing,
       spot,
       vault,
@@ -184,6 +190,7 @@ async function main() {
     .claimSpot()
     .accountsStrict({
       buyer: buyer.publicKey,
+      config,
       listing,
       spot,
       vault,
@@ -225,6 +232,7 @@ async function main() {
       config,
       listing,
       spot,
+      proof,
       dispute,
       vault,
       sellerAta,
@@ -236,17 +244,16 @@ async function main() {
     })
     .rpc();
 
-  const decision = await program.account.disputeRecord.fetch(dispute);
   const buyerAfter = (await getAccount(connection, buyerAta)).amount;
   const sellerAfter = (await getAccount(connection, sellerAta)).amount;
   const treasuryAfter = (await getAccount(connection, treasuryAta)).amount;
   if (
-    decision.sellerShareBps !== 5_000 ||
-    decision.buyerRefund.toString() !== "500000" ||
+    (await connection.getAccountInfo(dispute)) ||
+    (await connection.getAccountInfo(proof)) ||
     buyerAfter !== buyerBefore - 500_000n ||
     sellerAfter !== sellerBefore + 487_500n ||
     treasuryAfter !== treasuryBefore + 12_500n ||
-    (await program.account.spot.fetch(spot)).status !== 2 ||
+    (await connection.getAccountInfo(spot)) ||
     (await connection.getAccountInfo(vault))
   ) {
     throw new Error("Resolved dispute balances or account state are incorrect");

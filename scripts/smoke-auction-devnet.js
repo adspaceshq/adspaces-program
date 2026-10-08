@@ -107,6 +107,7 @@ async function main() {
     .addSpot(new anchor.BN(OPENING_BID.toString()))
     .accountsStrict({
       seller: seller.publicKey,
+      config,
       listing,
       spot,
       vault,
@@ -121,6 +122,7 @@ async function main() {
     .placeBid(new anchor.BN(OPENING_BID.toString()))
     .accountsStrict({
       bidder: alice.publicKey,
+      config,
       listing,
       spot,
       vault,
@@ -139,6 +141,7 @@ async function main() {
     .placeBid(new anchor.BN(TAKEOVER_BID.toString()))
     .accountsStrict({
       bidder: bob.publicKey,
+      config,
       listing,
       spot,
       vault,
@@ -174,7 +177,7 @@ async function main() {
     .rpc();
   if (
     (await getAccount(connection, bobAta)).amount !== bobBefore ||
-    (await program.account.spot.fetch(spot)).status !== 3 ||
+    (await connection.getAccountInfo(spot)) ||
     (await connection.getAccountInfo(vault))
   ) {
     throw new Error("Auction winner refund or vault closure is incorrect");

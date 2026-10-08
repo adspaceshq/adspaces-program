@@ -202,6 +202,7 @@ async function start() {
     .addSpot(new anchor.BN(PRICE.toString()))
     .accountsStrict({
       seller: seller.publicKey,
+      config,
       listing,
       spot,
       vault,
@@ -215,6 +216,7 @@ async function start() {
     .claimSpot()
     .accountsStrict({
       buyer: buyer.publicKey,
+      config,
       listing,
       spot,
       vault,
@@ -275,6 +277,7 @@ async function finish() {
       listing: new anchor.web3.PublicKey(state.listing),
       seller: seller.publicKey,
       spot: new anchor.web3.PublicKey(state.spot),
+      proof: new anchor.web3.PublicKey(state.proof),
       vault: new anchor.web3.PublicKey(state.vault),
       sellerAta,
       treasuryAta,
@@ -287,7 +290,7 @@ async function finish() {
   if (
     sellerAfter !== sellerBefore + 975_000n ||
     treasuryAfter !== treasuryBefore + 25_000n ||
-    (await program.account.spot.fetch(new anchor.web3.PublicKey(state.spot))).status !== 2 ||
+    (await connection.getAccountInfo(new anchor.web3.PublicKey(state.spot))) ||
     (await connection.getAccountInfo(new anchor.web3.PublicKey(state.vault)))
   ) {
     throw new Error("Seller payout, fee, or finalized account state is incorrect");
