@@ -88,3 +88,19 @@ pub const DISPUTE_TIMEOUT_SECONDS: i64 = 300;
 #[constant]
 #[cfg(not(feature = "devnet-short-review"))]
 pub const DISPUTE_TIMEOUT_SECONDS: i64 = 14 * 24 * 60 * 60;
+
+#[constant]
+#[cfg(feature = "devnet-short-review")]
+pub const SNIPE_WINDOW_SECONDS: i64 = 30;
+
+#[constant]
+#[cfg(not(feature = "devnet-short-review"))]
+pub const SNIPE_WINDOW_SECONDS: i64 = 5 * 60;
+
+#[constant]
+#[cfg(feature = "devnet-short-review")]
+pub const SNIPE_EXTENSION_SECONDS: i64 = 30;
+
+#[constant]
+#[cfg(not(feature = "devnet-short-review"))]
+pub const SNIPE_EXTENSION_SECONDS: i64 = 5 * 60;

@@ -79,6 +79,13 @@ pub struct BidPlaced {
 }
 
 #[event]
+pub struct DeadlineExtended {
+    pub listing: Pubkey,
+    pub previous_deadline: i64,
+    pub new_deadline: i64,
+}
+
+#[event]
 pub struct BidRefunded {
     pub listing: Pubkey,
     pub index: u8,

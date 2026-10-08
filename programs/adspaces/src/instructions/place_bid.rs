@@ -4,7 +4,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount};
 use crate::{
     constants::*,
     error::AdspacesError,
-    events::{BidPlaced, BidRefunded},
+    events::{BidPlaced, BidRefunded, DeadlineExtended},
     state::{Config, Listing, Spot},
 };
 
@@ -13,6 +13,7 @@ pub struct PlaceBid<'info> {
     #[account(mut)]
     pub bidder: Signer<'info>,
     #[account(
+        mut,
         seeds = [LISTING_SEED, listing.seller.as_ref(), listing.slug_hash.as_ref()],
         bump = listing.bump,
         constraint = listing.status == LISTING_OPEN @ AdspacesError::ListingNotOpen,
@@ -149,6 +150,23 @@ pub fn handle_place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
         bidder: ctx.accounts.bidder.key(),
         amount,
     });
+
+    let deadline = ctx.accounts.listing.deadline;
+    let snipe_threshold = deadline
+        .checked_sub(SNIPE_WINDOW_SECONDS)
+        .ok_or(AdspacesError::MathOverflow)?;
+    if now >= snipe_threshold {
+        let new_deadline = deadline
+            .checked_add(SNIPE_EXTENSION_SECONDS)
+            .ok_or(AdspacesError::MathOverflow)?;
+        let previous_deadline = ctx.accounts.listing.deadline;
+        ctx.accounts.listing.deadline = new_deadline;
+        emit!(DeadlineExtended {
+            listing: ctx.accounts.listing.key(),
+            previous_deadline,
+            new_deadline,
+        });
+    }
 
     Ok(())
 }
