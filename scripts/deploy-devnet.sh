@@ -38,7 +38,7 @@ echo "Deployer: $deployer"
 echo "Devnet balance: $balance"
 
 if program_info="$(solana program show "$program_id" --url "$devnet_url" 2>/dev/null)"; then
-  authority="$(awk -F': ' '/Upgrade Authority:/{print $2}' <<<"$program_info")"
+  authority="$(awk -F': ' '/^(Upgrade )?Authority:/{print $2}' <<<"$program_info")"
   [[ "$authority" == "$deployer" ]] || {
     echo "Upgrade authority is $authority, not $deployer" >&2
     exit 1
