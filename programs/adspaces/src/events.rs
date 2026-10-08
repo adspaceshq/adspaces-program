@@ -144,6 +144,12 @@ pub struct DisputeResolved {
 }
 
 #[event]
+pub struct ListingClosed {
+    pub listing: Pubkey,
+    pub seller: Pubkey,
+}
+
+#[event]
 pub struct SpotRefunded {
     pub listing: Pubkey,
     pub index: u8,

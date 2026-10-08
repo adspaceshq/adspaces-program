@@ -60,6 +60,10 @@ pub mod adspaces {
         instructions::review_authority::handle_update_review_authority(ctx, new_authority)
     }
 
+    pub fn close_listing(ctx: Context<CloseListing>) -> Result<()> {
+        instructions::close_listing::handle_close_listing(ctx)
+    }
+
     pub fn close_spot(ctx: Context<CloseSpot>) -> Result<()> {
         instructions::close_spot::handle_close_spot(ctx)
     }

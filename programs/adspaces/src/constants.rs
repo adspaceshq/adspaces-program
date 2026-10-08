@@ -53,6 +53,9 @@ pub const MODE_AUCTION: u8 = 1;
 pub const LISTING_OPEN: u8 = 0;
 
 #[constant]
+pub const LISTING_CLOSED: u8 = 1;
+
+#[constant]
 pub const SPOT_OPEN: u8 = 0;
 
 #[constant]

@@ -1,5 +1,6 @@
 pub mod add_spot;
 pub mod claim_spot;
+pub mod close_listing;
 pub mod close_spot;
 pub mod config_authority;
 pub mod create_listing;
@@ -16,6 +17,7 @@ pub mod withdraw_dispute;
 
 pub use add_spot::*;
 pub use claim_spot::*;
+pub use close_listing::*;
 pub use close_spot::*;
 pub use config_authority::*;
 pub use create_listing::*;

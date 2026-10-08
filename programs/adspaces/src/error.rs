@@ -84,4 +84,8 @@ pub enum AdspacesError {
     InvalidReviewAuthority,
     #[msg("Listing fee policy is invalid for its pricing mode.")]
     InvalidFeePolicy,
+    #[msg("Listing still has active spots.")]
+    ListingHasActiveSpots,
+    #[msg("Listing deadline has not passed yet.")]
+    ListingStillActive,
 }
