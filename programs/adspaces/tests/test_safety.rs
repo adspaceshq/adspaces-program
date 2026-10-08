@@ -338,6 +338,44 @@ fn timed_out_dispute_refunds_buyer_in_full() {
 }
 
 #[test]
+fn migrate_config_upgrades_legacy_layout() {
+    let mut env = Env::new();
+    let mut account = env.svm.get_account(&env.config).unwrap();
+    let new_len = account.data.len();
+    account.data.truncate(new_len - 1);
+    env.svm.set_account(env.config, account).unwrap();
+
+    let config_key = env.config;
+    let migrate = |authority: Pubkey| {
+        new_ix(
+            program_id(),
+            adspaces::instruction::MigrateConfig {}.data(),
+            adspaces::accounts::MigrateConfig {
+                authority,
+                config: config_key,
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+        )
+    };
+    let stranger = new_seller(&mut env);
+    assert!(send(&mut env.svm, &[migrate(stranger.pubkey())], &stranger, &[]).is_err());
+
+    let authority = env.mint_authority.insecure_clone();
+    send(&mut env.svm, &[migrate(authority.pubkey())], &authority, &[]).unwrap();
+    let config = read_config(&env.svm, &env.config);
+    assert_eq!(env.svm.get_account(&env.config).unwrap().data.len(), new_len);
+    assert!(!config.paused);
+    assert_eq!(config.authority, authority.pubkey());
+    assert_eq!(config.fee_bps, 250);
+
+    let seller = new_seller(&mut env);
+    let now = env.clock().unix_timestamp;
+    let listing = create_listing(&mut env, &seller, 45, adspaces::constants::MODE_FIXED, now + DAY);
+    add_spot(&mut env, &seller, &listing);
+}
+
+#[test]
 fn late_bid_extends_auction_deadline() {
     let mut env = Env::new();
     let seller = new_seller(&mut env);
