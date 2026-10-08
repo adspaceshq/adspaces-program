@@ -58,6 +58,10 @@ pub struct PlaceBid<'info> {
 }
 
 pub fn handle_place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
+    require!(
+        ctx.accounts.bidder.key() != ctx.accounts.listing.seller,
+        AdspacesError::SelfDealing
+    );
     let now = Clock::get()?.unix_timestamp;
     require!(
         now < ctx.accounts.listing.deadline,

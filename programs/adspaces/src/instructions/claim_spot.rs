@@ -54,6 +54,10 @@ pub struct ClaimSpot<'info> {
 }
 
 pub fn handle_claim_spot(ctx: Context<ClaimSpot>) -> Result<()> {
+    require!(
+        ctx.accounts.buyer.key() != ctx.accounts.listing.seller,
+        AdspacesError::SelfDealing
+    );
     let now = Clock::get()?.unix_timestamp;
     require!(
         now < ctx.accounts.listing.deadline,

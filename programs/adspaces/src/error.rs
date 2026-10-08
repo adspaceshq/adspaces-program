@@ -90,4 +90,6 @@ pub enum AdspacesError {
     ListingStillActive,
     #[msg("Protocol is paused.")]
     ProtocolPaused,
+    #[msg("Seller cannot buy or bid on their own listing.")]
+    SelfDealing,
 }
