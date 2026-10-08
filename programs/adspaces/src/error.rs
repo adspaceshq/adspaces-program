@@ -94,4 +94,6 @@ pub enum AdspacesError {
     SelfDealing,
     #[msg("Dispute has not timed out yet.")]
     DisputeNotTimedOut,
+    #[msg("Dispute timeout is outside the allowed range.")]
+    InvalidDisputeTimeout,
 }

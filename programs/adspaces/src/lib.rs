@@ -96,6 +96,10 @@ pub mod adspaces {
         instructions::refund_spot::handle_refund_spot(ctx)
     }
 
+    pub fn set_dispute_timeout(ctx: Context<SetDisputeTimeout>, seconds: i64) -> Result<()> {
+        instructions::set_dispute_timeout::handle_set_dispute_timeout(ctx, seconds)
+    }
+
     pub fn timeout_dispute(ctx: Context<TimeoutDispute>) -> Result<()> {
         instructions::timeout_dispute::handle_timeout_dispute(ctx)
     }

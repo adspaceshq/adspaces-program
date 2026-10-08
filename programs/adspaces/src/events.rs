@@ -157,6 +157,12 @@ pub struct ListingClosed {
 }
 
 #[event]
+pub struct DisputeTimeoutUpdated {
+    pub previous_seconds: i64,
+    pub new_seconds: i64,
+}
+
+#[event]
 pub struct DisputeTimedOut {
     pub listing: Pubkey,
     pub index: u8,
