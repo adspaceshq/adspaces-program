@@ -35,9 +35,6 @@ pub const PROOF_URI_MAX_LEN: usize = 200;
 pub const DISPUTE_URI_MAX_LEN: usize = 200;
 
 #[constant]
-pub const PLATFORM_FEE_BPS: u16 = 250;
-
-#[constant]
 pub const USDC_MINT_DEVNET: &str = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
 #[constant]
