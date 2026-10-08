@@ -37,7 +37,7 @@ fn initialize_config(env: &mut Env, authority: &Keypair) -> litesvm::types::Tran
         program_id(),
         adspaces::instruction::InitializeConfig {
             treasury: env.treasury,
-            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            fee_bps: 250,
         }
         .data(),
         adspaces::accounts::InitializeConfig {
@@ -138,7 +138,7 @@ fn initializes_protocol_config() {
     assert_eq!(config.authority, env.mint_authority.pubkey());
     assert_eq!(config.payment_mint, env.usdc);
     assert_eq!(config.treasury, env.treasury);
-    assert_eq!(config.fee_bps, adspaces::constants::PLATFORM_FEE_BPS);
+    assert_eq!(config.fee_bps, 250);
 }
 
 #[test]
@@ -211,7 +211,7 @@ fn rejects_unauthorized_or_invalid_updates() {
 
     let config = read_config(&env.svm, &env.config);
     assert_eq!(config.treasury, env.treasury);
-    assert_eq!(config.fee_bps, adspaces::constants::PLATFORM_FEE_BPS);
+    assert_eq!(config.fee_bps, 250);
 }
 
 #[test]

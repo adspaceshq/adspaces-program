@@ -26,9 +26,9 @@ fn create_fixed_listing(env: &mut Env, seller: &Keypair, slug_hash: [u8; 16]) ->
             review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
             min_increment: 0,
             double_up: false,
-            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            fee_bps: 250,
             uplift_fee_bps: 0,
-            max_fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            max_fee_bps: 250,
         }
         .data(),
         adspaces::accounts::CreateListing {
@@ -72,9 +72,9 @@ fn delivery_deadline_must_follow_artwork_close() {
             review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
             min_increment: 0,
             double_up: false,
-            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            fee_bps: 250,
             uplift_fee_bps: 0,
-            max_fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            max_fee_bps: 250,
         }
         .data(),
         adspaces::accounts::CreateListing {
@@ -120,9 +120,9 @@ fn metadata_uri_accepts_exact_account_limit() {
                 review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
                 min_increment: 0,
                 double_up: false,
-                fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+                fee_bps: 250,
                 uplift_fee_bps: 0,
-                max_fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+                max_fee_bps: 250,
             }
             .data(),
             adspaces::accounts::CreateListing {
@@ -156,6 +156,7 @@ fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) ->
             listing: *listing,
             spot,
             vault,
+            config: env.config,
             usdc_mint: env.usdc,
             system_program: system_program::ID,
             token_program: token_program_id(),
@@ -188,6 +189,7 @@ fn claim(
             spot: *spot,
             vault: *vault,
             buyer_ata: *buyer_ata,
+            config: env.config,
             usdc_mint: env.usdc,
             token_program: token_program_id(),
         }
@@ -239,6 +241,7 @@ fn fixed_claim_twice_fails() {
             spot,
             vault,
             buyer_ata: buyer2_ata,
+            config: env.config,
             usdc_mint: env.usdc,
             token_program: token_program_id(),
         }
@@ -269,6 +272,7 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
             vault,
             bidder_ata,
             prev_bidder_ata: None,
+            config: env.config,
             usdc_mint: env.usdc,
             token_program: token_program_id(),
         }
@@ -292,7 +296,7 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
             review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
             min_increment: 10_000_000,
             double_up: false,
-            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            fee_bps: 250,
             uplift_fee_bps: 1_000,
             max_fee_bps: 750,
         }
@@ -320,6 +324,7 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
             spot: a_spot,
             vault: a_vault,
             buyer_ata: bidder_ata,
+            config: env.config,
             usdc_mint: env.usdc,
             token_program: token_program_id(),
         }
@@ -349,9 +354,9 @@ fn claim_after_deadline_fails() {
             review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
             min_increment: 0,
             double_up: false,
-            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            fee_bps: 250,
             uplift_fee_bps: 0,
-            max_fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            max_fee_bps: 250,
         }
         .data(),
         adspaces::accounts::CreateListing {
@@ -380,6 +385,7 @@ fn claim_after_deadline_fails() {
             spot,
             vault,
             buyer_ata,
+            config: env.config,
             usdc_mint: env.usdc,
             token_program: token_program_id(),
         }
@@ -408,6 +414,7 @@ fn add_spot_after_deadline_fails() {
             listing,
             spot,
             vault,
+            config: env.config,
             usdc_mint: env.usdc,
             system_program: system_program::ID,
             token_program: token_program_id(),

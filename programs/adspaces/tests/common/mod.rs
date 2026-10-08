@@ -167,7 +167,7 @@ impl Env {
             program_id(),
             adspaces::instruction::InitializeConfig {
                 treasury,
-                fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+                fee_bps: 250,
             }
             .data(),
             adspaces::accounts::InitializeConfig {

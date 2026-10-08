@@ -34,7 +34,7 @@ fn create_auction_listing(
             review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
             min_increment,
             double_up,
-            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            fee_bps: 250,
             uplift_fee_bps: 1_000,
             max_fee_bps: 750,
         }
@@ -62,6 +62,7 @@ fn create_auction_listing(
             listing,
             spot,
             vault,
+            config: env.config,
             usdc_mint: env.usdc,
             system_program: system_program::ID,
             token_program: token_program_id(),
@@ -121,6 +122,7 @@ fn bid(
             vault: *vault,
             bidder_ata: *bidder_ata,
             prev_bidder_ata,
+            config: env.config,
             usdc_mint: env.usdc,
             token_program: token_program_id(),
         }
@@ -359,21 +361,17 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
             seller: seller.pubkey(),
             buyer_ata: bob_ata,
             treasury_ata,
+            proof: None,
             usdc_mint: env.usdc,
             token_program: token_program_id(),
         }
         .to_account_metas(None),
     );
     send(&mut env.svm, &[resolve], &env.mint_authority, &[]).unwrap();
-    let stored_dispute = read_dispute(&env.svm, &dispute_record);
-    assert_eq!(stored_dispute.seller_share_bps, 0);
-    assert_eq!(stored_dispute.buyer_refund, 110_000_000);
     assert_eq!(token_balance(&env.svm, &bob_ata), 1_000_000_000);
     assert_eq!(token_balance(&env.svm, &seller_ata), 0);
     assert_eq!(token_balance(&env.svm, &treasury_ata), 0);
-    assert_eq!(
-        read_spot(&env.svm, &spot).status,
-        adspaces::constants::SPOT_FINALIZED
-    );
+    assert!(env.svm.get_account(&dispute_record).is_none());
+    assert!(env.svm.get_account(&spot).is_none());
     assert!(env.svm.get_account(&vault).is_none());
 }

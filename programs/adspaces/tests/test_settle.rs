@@ -60,9 +60,9 @@ fn create_fixed_listing_with_review(
             review_window_seconds,
             min_increment: 0,
             double_up: false,
-            fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            fee_bps: 250,
             uplift_fee_bps: 0,
-            max_fee_bps: adspaces::constants::PLATFORM_FEE_BPS,
+            max_fee_bps: 250,
         }
         .data(),
         adspaces::accounts::CreateListing {
@@ -92,6 +92,7 @@ fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) ->
             listing: *listing,
             spot,
             vault,
+            config: env.config,
             usdc_mint: env.usdc,
             system_program: system_program::ID,
             token_program: token_program_id(),
@@ -141,6 +142,7 @@ fn claim(
             spot: *spot,
             vault: *vault,
             buyer_ata: *buyer_ata,
+            config: env.config,
             usdc_mint: env.usdc,
             token_program: token_program_id(),
         }
@@ -171,6 +173,7 @@ fn withdraw(
             vault: *vault,
             seller_ata: *seller_ata,
             treasury_ata: *treasury_ata,
+            proof: proof_pda(spot).0,
             usdc_mint: env.usdc,
             token_program: token_program_id(),
         }
@@ -445,10 +448,8 @@ fn withdraw_pays_seller_minus_fee_and_closes_vault() {
         PRICE - expected_fee as u64
     );
     assert_eq!(token_balance(&env.svm, &treasury_ata), expected_fee as u64);
-    assert_eq!(
-        read_spot(&env.svm, &spot).status,
-        adspaces::constants::SPOT_FINALIZED
-    );
+    assert!(env.svm.get_account(&spot).is_none());
+    assert!(env.svm.get_account(&proof).is_none());
     assert!(env.svm.get_account(&vault).is_none());
 }
 
@@ -496,10 +497,7 @@ fn close_spot_reclaims_unfunded_vault() {
         .to_account_metas(None),
     );
     send(&mut env.svm, &[close], &seller, &[]).unwrap();
-    assert_eq!(
-        read_spot(&env.svm, &spot).status,
-        adspaces::constants::SPOT_CANCELLED
-    );
+    assert!(env.svm.get_account(&spot).is_none());
     assert!(env.svm.get_account(&vault).is_none());
 }
 
@@ -576,10 +574,7 @@ fn seller_cancels_funded_spot_with_full_buyer_refund() {
         },
     );
     assert_eq!(token_balance(&env.svm, &buyer_ata), PRICE);
-    assert_eq!(
-        read_spot(&env.svm, &spot).status,
-        adspaces::constants::SPOT_CANCELLED
-    );
+    assert!(env.svm.get_account(&spot).is_none());
     assert!(env.svm.get_account(&vault).is_none());
 }
 
@@ -640,10 +635,7 @@ fn anyone_can_refund_missing_proof_after_delivery_deadline() {
     );
     assert_eq!(token_balance(&env.svm, &buyer_ata), PRICE);
     assert_eq!(token_balance(&env.svm, &wrong_ata), 0);
-    assert_eq!(
-        read_spot(&env.svm, &spot).status,
-        adspaces::constants::SPOT_CANCELLED
-    );
+    assert!(env.svm.get_account(&spot).is_none());
     assert!(env.svm.get_account(&vault).is_none());
 }
 
@@ -880,6 +872,7 @@ fn only_winner_can_dispute_and_block_payout() {
             seller: seller.pubkey(),
             buyer_ata,
             treasury_ata,
+            proof: Some(proof_pda(&spot).0),
             usdc_mint: env.usdc,
             token_program: token_program_id(),
         }
@@ -931,14 +924,9 @@ fn only_winner_can_dispute_and_block_payout() {
     let resolve_meta = send(&mut env.svm, &[resolve.clone()], &env.mint_authority, &[]).unwrap();
     let half = PRICE / 2;
     let fee = half as u128 * FEE_BPS / 10_000;
-    let stored_dispute = read_dispute(&env.svm, &dispute_record);
-    assert_eq!(stored_dispute.decision_hash, [7; 32]);
-    assert_eq!(stored_dispute.decision_uri, maximum_decision_uri);
-    assert_eq!(stored_dispute.decided_at, env.clock().unix_timestamp);
-    assert_eq!(stored_dispute.seller_share_bps, 5_000);
-    assert_eq!(stored_dispute.buyer_refund, half);
-    assert_eq!(stored_dispute.seller_amount, half - fee as u64);
-    assert_eq!(stored_dispute.fee, fee as u64);
+    assert!(env.svm.get_account(&dispute_record).is_none());
+    assert!(env.svm.get_account(&spot).is_none());
+    assert!(env.svm.get_account(&proof_pda(&spot).0).is_none());
     assert_event(
         &resolve_meta,
         &adspaces::events::DisputeResolved {
@@ -1067,6 +1055,7 @@ fn dispute_withdrawal_rejects_non_buyer_and_resolved_disputes() {
             seller: seller.pubkey(),
             buyer_ata,
             treasury_ata,
+            proof: Some(proof_pda(&spot).0),
             usdc_mint: env.usdc,
             token_program: token_program_id(),
         }
@@ -1074,10 +1063,7 @@ fn dispute_withdrawal_rejects_non_buyer_and_resolved_disputes() {
     );
     send(&mut env.svm, &[resolve], &env.mint_authority, &[]).unwrap();
     assert!(withdraw_dispute(&mut env, &buyer, &listing, &spot).is_err());
-    assert_eq!(
-        read_spot(&env.svm, &spot).status,
-        adspaces::constants::SPOT_FINALIZED
-    );
+    assert!(env.svm.get_account(&spot).is_none());
 }
 
 #[test]
