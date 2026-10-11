@@ -26,7 +26,7 @@ pub struct WithdrawDispute<'info> {
     pub spot: Account<'info, Spot>,
     #[account(
         mut,
-        close = buyer,
+        close = rent_payer,
         seeds = [DISPUTE_SEED, spot.key().as_ref()],
         bump = dispute.bump,
         constraint = dispute.spot == spot.key() @ AdspacesError::Unauthorized,
@@ -34,6 +34,9 @@ pub struct WithdrawDispute<'info> {
         constraint = dispute.decided_at == 0 @ AdspacesError::Unauthorized,
     )]
     pub dispute: Account<'info, DisputeRecord>,
+    /// Gets the dispute's rent back: the platform account that paid it.
+    #[account(mut, address = dispute.rent_payer @ AdspacesError::Unauthorized)]
+    pub rent_payer: SystemAccount<'info>,
 }
 
 pub fn handle_withdraw_dispute(ctx: Context<WithdrawDispute>) -> Result<()> {

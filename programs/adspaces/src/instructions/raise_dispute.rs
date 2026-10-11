@@ -26,9 +26,12 @@ pub struct RaiseDispute<'info> {
         constraint = spot.status == SPOT_FUNDED @ AdspacesError::SpotNotFunded,
     )]
     pub spot: Account<'info, Spot>,
+    /// Platform key that pays the dispute's rent, so buyers never need SOL. Co-signs the raise.
+    #[account(mut)]
+    pub rent_payer: Signer<'info>,
     #[account(
         init,
-        payer = buyer,
+        payer = rent_payer,
         space = 8 + DisputeRecord::INIT_SPACE,
         seeds = [DISPUTE_SEED, spot.key().as_ref()],
         bump,
@@ -77,6 +80,7 @@ pub fn handle_raise_dispute(
     let dispute = &mut ctx.accounts.dispute;
     dispute.spot = spot.key();
     dispute.buyer = ctx.accounts.buyer.key();
+    dispute.rent_payer = ctx.accounts.rent_payer.key();
     dispute.proof_submitted = proof_submitted;
     dispute.evidence_hash = evidence_hash;
     dispute.evidence_uri = evidence_uri;

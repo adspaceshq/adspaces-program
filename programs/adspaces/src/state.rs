@@ -91,6 +91,8 @@ pub struct ProofRecord {
 pub struct DisputeRecord {
     pub spot: Pubkey,
     pub buyer: Pubkey,
+    /// Platform account that paid the dispute's rent; the rent returns here when the dispute closes.
+    pub rent_payer: Pubkey,
     pub proof_submitted: bool,
     pub evidence_hash: [u8; 32],
     #[max_len(DISPUTE_URI_MAX_LEN)]

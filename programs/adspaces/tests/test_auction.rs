@@ -337,6 +337,7 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
             .data(),
             adspaces::accounts::RaiseDispute {
                 buyer,
+                rent_payer: env.mint_authority.pubkey(),
                 config: env.config,
                 listing,
                 spot,
@@ -346,8 +347,8 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
             .to_account_metas(None),
         )
     };
-    assert!(send(&mut env.svm, &[dispute_ix(alice.pubkey())], &alice, &[]).is_err());
-    send(&mut env.svm, &[dispute_ix(bob.pubkey())], &bob, &[]).unwrap();
+    assert!(send(&mut env.svm, &[dispute_ix(alice.pubkey())], &alice, &[&env.mint_authority]).is_err());
+    send(&mut env.svm, &[dispute_ix(bob.pubkey())], &bob, &[&env.mint_authority]).unwrap();
     assert_eq!(
         read_spot(&env.svm, &spot).status,
         adspaces::constants::SPOT_DISPUTED
@@ -371,7 +372,7 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
             listing,
             spot,
             dispute: dispute_record,
-            dispute_buyer: read_dispute(&env.svm, &dispute_record).buyer,
+            rent_payer: read_dispute(&env.svm, &dispute_record).rent_payer,
             vault,
             seller_ata,
             seller: seller.pubkey(),

@@ -297,6 +297,7 @@ fn timed_out_dispute_refunds_buyer_in_full() {
         .data(),
         adspaces::accounts::RaiseDispute {
             buyer: buyer.pubkey(),
+            rent_payer: env.mint_authority.pubkey(),
             config: env.config,
             listing,
             spot,
@@ -305,7 +306,7 @@ fn timed_out_dispute_refunds_buyer_in_full() {
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[raise], &buyer, &[]).unwrap();
+    send(&mut env.svm, &[raise], &buyer, &[&env.mint_authority]).unwrap();
 
     let caller = new_seller(&mut env);
     let timeout = new_ix(
@@ -318,7 +319,7 @@ fn timed_out_dispute_refunds_buyer_in_full() {
             seller: seller.pubkey(),
             spot,
             dispute,
-            dispute_buyer: read_dispute(&env.svm, &dispute).buyer,
+            rent_payer: read_dispute(&env.svm, &dispute).rent_payer,
             proof: None,
             vault,
             buyer_ata,

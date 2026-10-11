@@ -36,9 +36,9 @@ pub struct TimeoutDispute<'info> {
         constraint = dispute.decided_at == 0 @ AdspacesError::Unauthorized,
     )]
     pub dispute: Box<Account<'info, DisputeRecord>>,
-    /// Receives the dispute account's rent: the buyer paid it when raising the dispute.
-    #[account(mut, address = dispute.buyer @ AdspacesError::Unauthorized)]
-    pub dispute_buyer: SystemAccount<'info>,
+    /// Gets the dispute account's rent back: the platform account that paid it.
+    #[account(mut, address = dispute.rent_payer @ AdspacesError::Unauthorized)]
+    pub rent_payer: SystemAccount<'info>,
     #[account(
         mut,
         seeds = [PROOF_SEED, spot.key().as_ref()],
@@ -119,7 +119,7 @@ pub fn handle_timeout_dispute(ctx: Context<TimeoutDispute>) -> Result<()> {
     if let Some(ref proof) = ctx.accounts.proof {
         proof.close(ctx.accounts.seller.to_account_info())?;
     }
-    ctx.accounts.dispute.close(ctx.accounts.dispute_buyer.to_account_info())?;
+    ctx.accounts.dispute.close(ctx.accounts.rent_payer.to_account_info())?;
     ctx.accounts.spot.close(ctx.accounts.seller.to_account_info())?;
 
     Ok(())

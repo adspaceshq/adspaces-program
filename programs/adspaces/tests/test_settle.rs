@@ -328,6 +328,7 @@ fn dispute_with_evidence(
         .data(),
         adspaces::accounts::RaiseDispute {
             buyer: buyer.pubkey(),
+            rent_payer: env.mint_authority.pubkey(),
             config: env.config,
             listing: *listing,
             spot: *spot,
@@ -336,7 +337,7 @@ fn dispute_with_evidence(
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[ix], buyer, &[])
+    send(&mut env.svm, &[ix], buyer, &[&env.mint_authority])
 }
 
 #[allow(clippy::result_large_err)]
@@ -352,6 +353,7 @@ fn withdraw_dispute(
         adspaces::instruction::WithdrawDispute {}.data(),
         adspaces::accounts::WithdrawDispute {
             buyer: buyer.pubkey(),
+            rent_payer: env.mint_authority.pubkey(),
             listing: *listing,
             spot: *spot,
             dispute,
@@ -868,7 +870,7 @@ fn only_winner_can_dispute_and_block_payout() {
             listing,
             spot,
             dispute: dispute_record,
-            dispute_buyer: read_dispute(&env.svm, &dispute_record).buyer,
+            rent_payer: read_dispute(&env.svm, &dispute_record).rent_payer,
             vault,
             seller_ata,
             seller: seller.pubkey(),
@@ -1052,7 +1054,7 @@ fn dispute_withdrawal_rejects_non_buyer_and_resolved_disputes() {
             listing,
             spot,
             dispute: dispute_record,
-            dispute_buyer: read_dispute(&env.svm, &dispute_record).buyer,
+            rent_payer: read_dispute(&env.svm, &dispute_record).rent_payer,
             vault,
             seller_ata,
             seller: seller.pubkey(),
