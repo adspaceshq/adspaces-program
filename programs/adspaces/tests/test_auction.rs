@@ -337,6 +337,7 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
             .data(),
             adspaces::accounts::RaiseDispute {
                 buyer,
+                config: env.config,
                 listing,
                 spot,
                 dispute,

@@ -328,6 +328,7 @@ fn dispute_with_evidence(
         .data(),
         adspaces::accounts::RaiseDispute {
             buyer: buyer.pubkey(),
+            config: env.config,
             listing: *listing,
             spot: *spot,
             dispute,

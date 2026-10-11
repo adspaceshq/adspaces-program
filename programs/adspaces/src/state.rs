@@ -96,6 +96,8 @@ pub struct DisputeRecord {
     #[max_len(DISPUTE_URI_MAX_LEN)]
     pub evidence_uri: String,
     pub opened_at: i64,
+    /// Timeout captured when the dispute was raised, so later config changes can't cut it short.
+    pub timeout_seconds: i64,
     pub decision_hash: [u8; 32],
     #[max_len(DISPUTE_URI_MAX_LEN)]
     pub decision_uri: String,

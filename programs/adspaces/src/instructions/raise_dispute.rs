@@ -4,13 +4,15 @@ use crate::{
     constants::*,
     error::AdspacesError,
     events::DisputeRaised,
-    state::{DisputeRecord, Listing, Spot},
+    state::{Config, DisputeRecord, Listing, Spot},
 };
 
 #[derive(Accounts)]
 pub struct RaiseDispute<'info> {
     #[account(mut)]
     pub buyer: Signer<'info>,
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Account<'info, Config>,
     #[account(
         seeds = [LISTING_SEED, listing.seller.as_ref(), listing.slug_hash.as_ref()],
         bump = listing.bump,
@@ -79,6 +81,7 @@ pub fn handle_raise_dispute(
     dispute.evidence_hash = evidence_hash;
     dispute.evidence_uri = evidence_uri;
     dispute.opened_at = now;
+    dispute.timeout_seconds = ctx.accounts.config.dispute_timeout_seconds;
     dispute.decision_hash = [0; 32];
     dispute.decision_uri = String::new();
     dispute.decided_at = 0;

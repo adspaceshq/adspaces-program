@@ -67,7 +67,7 @@ pub fn handle_timeout_dispute(ctx: Context<TimeoutDispute>) -> Result<()> {
         .accounts
         .dispute
         .opened_at
-        .checked_add(ctx.accounts.config.dispute_timeout_seconds)
+        .checked_add(ctx.accounts.dispute.timeout_seconds)
         .ok_or(AdspacesError::MathOverflow)?;
     require!(now >= timeout_at, AdspacesError::DisputeNotTimedOut);
 

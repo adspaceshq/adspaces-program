@@ -297,6 +297,7 @@ fn timed_out_dispute_refunds_buyer_in_full() {
         .data(),
         adspaces::accounts::RaiseDispute {
             buyer: buyer.pubkey(),
+            config: env.config,
             listing,
             spot,
             dispute,
