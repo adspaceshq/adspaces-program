@@ -20,6 +20,20 @@ fn create_auction_listing(
     min_increment: u64,
     double_up: bool,
 ) -> Pubkey {
+    create_auction_listing_timed(env, seller, slug_hash, min_increment, double_up, 30 * 86_400, 37 * 86_400)
+}
+
+// `deadline_offset` is the bidding deadline; artwork closes with it, and delivery is due at `delivery_offset`.
+#[allow(clippy::too_many_arguments)]
+fn create_auction_listing_timed(
+    env: &mut Env,
+    seller: &Keypair,
+    slug_hash: [u8; 16],
+    min_increment: u64,
+    double_up: bool,
+    deadline_offset: i64,
+    delivery_offset: i64,
+) -> Pubkey {
     let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
     let now = env.clock().unix_timestamp;
     let ix = new_ix(
@@ -28,9 +42,9 @@ fn create_auction_listing(
             slug_hash,
             metadata_uri: "https://adspaces.test/api/listings/auction".to_string(),
             mode: adspaces::constants::MODE_AUCTION,
-            deadline: now + 30 * 86_400,
-            artwork_close: now + 30 * 86_400,
-            delivery_deadline: now + 37 * 86_400,
+            deadline: now + deadline_offset,
+            artwork_close: now + deadline_offset,
+            delivery_deadline: now + delivery_offset,
             review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
             min_increment,
             double_up,
@@ -374,4 +388,68 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
     assert!(env.svm.get_account(&dispute_record).is_none());
     assert!(env.svm.get_account(&spot).is_none());
     assert!(env.svm.get_account(&vault).is_none());
+}
+
+#[test]
+fn listing_rejects_dust_bid_steps() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+
+    let slug_hash = [11u8; 16];
+    let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
+    let now = env.clock().unix_timestamp;
+    let ix = new_ix(
+        program_id(),
+        adspaces::instruction::CreateListing {
+            slug_hash,
+            metadata_uri: "https://adspaces.test/api/listings/dust".to_string(),
+            mode: adspaces::constants::MODE_AUCTION,
+            deadline: now + 30 * 86_400,
+            artwork_close: now + 30 * 86_400,
+            delivery_deadline: now + 37 * 86_400,
+            review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
+            min_increment: 1,
+            double_up: false,
+            fee_bps: 250,
+            uplift_fee_bps: 1_000,
+            max_fee_bps: 750,
+        }
+        .data(),
+        adspaces::accounts::CreateListing {
+            seller: seller.pubkey(),
+            reviewer: env.mint_authority.pubkey(),
+            listing,
+            config: env.config,
+            review_authority: env.review_authority,
+            usdc_mint: env.usdc,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    assert!(send(&mut env.svm, &[ix], &seller, &[&env.mint_authority]).is_err());
+}
+
+#[test]
+fn anti_snipe_extension_stops_at_delivery_deadline() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+
+    // Delivery is due only 120 seconds after bidding closes, so one snipe extension would overshoot it.
+    let listing = create_auction_listing_timed(&mut env, &seller, [12u8; 16], INCREMENT, false, 30 * 86_400, 30 * 86_400 + 120);
+    let (spot, vault) = spot_and_vault(&listing);
+    let before = read_listing(&env.svm, &listing);
+    let cap = before.delivery_deadline - 1;
+
+    let (alice, alice_ata) = env.new_user(1_000_000_000);
+    env.warp_to_timestamp(before.deadline - 10);
+    bid(&mut env, &alice, &alice_ata, &listing, &spot, &vault, None, START).unwrap();
+    assert_eq!(read_listing(&env.svm, &listing).deadline, cap);
+
+    // At the cap, a further late bid must not move the deadline again.
+    let (bob, bob_ata) = env.new_user(1_000_000_000);
+    env.warp_to_timestamp(cap - 10);
+    bid(&mut env, &bob, &bob_ata, &listing, &spot, &vault, Some(alice_ata), START + INCREMENT).unwrap();
+    assert_eq!(read_listing(&env.svm, &listing).deadline, cap);
 }
