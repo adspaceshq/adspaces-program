@@ -38,8 +38,10 @@ pub fn handle_close_listing(ctx: Context<CloseListing>) -> Result<()> {
             ctx.program_id,
         );
         require_keys_eq!(spot.key(), expected, AdspacesError::ListingHasActiveSpots);
+        // A closed spot has no data and belongs to the system program. Lamports don't count: anyone can
+        // send 1 lamport to a closed spot address, which must not lock the listing rent forever.
         require!(
-            spot.data_is_empty() && spot.lamports() == 0,
+            spot.data_is_empty() && *spot.owner == anchor_lang::system_program::ID,
             AdspacesError::ListingHasActiveSpots
         );
     }
