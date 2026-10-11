@@ -103,6 +103,10 @@ pub const SNIPE_WINDOW_SECONDS: i64 = 30;
 #[cfg(not(feature = "devnet-short-review"))]
 pub const SNIPE_WINDOW_SECONDS: i64 = 5 * 60;
 
+/// Smallest allowed auction bid step, in USDC base units (6 decimals): 0.01 USDC.
+#[constant]
+pub const MIN_BID_INCREMENT: u64 = 10_000;
+
 #[constant]
 #[cfg(feature = "devnet-short-review")]
 pub const SNIPE_EXTENSION_SECONDS: i64 = 30;

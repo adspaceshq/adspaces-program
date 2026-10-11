@@ -83,7 +83,8 @@ pub fn handle_create_listing(
     );
 
     if mode == MODE_AUCTION && !double_up {
-        require!(min_increment > 0, AdspacesError::InvalidMinIncrement);
+        // Floor of 0.01 USDC: a 1-unit step lets two accounts keep an auction alive with dust bids.
+        require!(min_increment >= MIN_BID_INCREMENT, AdspacesError::InvalidMinIncrement);
     }
     validate_fee_policy(
         mode,
