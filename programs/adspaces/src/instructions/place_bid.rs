@@ -155,10 +155,14 @@ pub fn handle_place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
     let snipe_threshold = deadline
         .checked_sub(SNIPE_WINDOW_SECONDS)
         .ok_or(AdspacesError::MathOverflow)?;
-    if now >= snipe_threshold {
+    // Extensions stop one second before the delivery deadline, so bidding can never run into the
+    // window where proof is due and anyone can refund a live auction.
+    let extension_cap = ctx.accounts.listing.delivery_deadline.checked_sub(1).ok_or(AdspacesError::MathOverflow)?;
+    if now >= snipe_threshold && deadline < extension_cap {
         let new_deadline = deadline
             .checked_add(SNIPE_EXTENSION_SECONDS)
-            .ok_or(AdspacesError::MathOverflow)?;
+            .ok_or(AdspacesError::MathOverflow)?
+            .min(extension_cap);
         let previous_deadline = ctx.accounts.listing.deadline;
         ctx.accounts.listing.deadline = new_deadline;
         emit!(DeadlineExtended {
