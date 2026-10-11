@@ -318,6 +318,7 @@ fn timed_out_dispute_refunds_buyer_in_full() {
             seller: seller.pubkey(),
             spot,
             dispute,
+            dispute_buyer: read_dispute(&env.svm, &dispute).buyer,
             proof: None,
             vault,
             buyer_ata,

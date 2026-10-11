@@ -371,6 +371,7 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
             listing,
             spot,
             dispute: dispute_record,
+            dispute_buyer: read_dispute(&env.svm, &dispute_record).buyer,
             vault,
             seller_ata,
             seller: seller.pubkey(),
