@@ -105,6 +105,74 @@ mod tests {
         assert_eq!(fee, 30);
     }
 
+    // Deterministic xorshift so the property test needs no extra crates and failures reproduce.
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+        fn below(&mut self, max: u64) -> u64 {
+            self.next() % max
+        }
+    }
+
+    // Mirrors create_listing's validate_fee_policy so only reachable policies are tested.
+    fn random_policy(rng: &mut Rng) -> Listing {
+        if rng.below(2) == 0 {
+            let fee = rng.below(10_001) as u16;
+            listing(MODE_FIXED, fee, 0, fee)
+        } else {
+            let fee = rng.below(10_001) as u16;
+            let max = fee + rng.below(10_001 - fee as u64) as u16;
+            let uplift = max + rng.below(10_001 - max as u64) as u16;
+            listing(MODE_AUCTION, fee, uplift, max)
+        }
+    }
+
+    #[test]
+    fn fees_never_exceed_the_cap_and_splits_always_add_up() {
+        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+        for _ in 0..200_000 {
+            let policy = random_policy(&mut rng);
+            // Prices and balances from dust up to ~18 trillion USDC base units (u64 range edge included).
+            let range = if rng.below(10) == 0 { u64::MAX / 2 } else { 10_000_000_000 };
+            let price = 1 + rng.below(range);
+            let uplift = rng.below(10_000_000_000);
+            let balance = if policy.mode == MODE_FIXED { price } else { price.saturating_add(uplift) };
+            let spot = spot(price);
+
+            let fee = calculate_fee(&policy, &spot, balance).unwrap();
+            assert!(fee <= balance, "fee {fee} > balance {balance}");
+            let cap = ((balance as u128) * (policy.max_fee_bps as u128) / 10_000) as u64;
+            assert!(fee <= cap, "fee {fee} above cap {cap}");
+
+            // Dispute split exactly as resolve_dispute computes it.
+            let share = rng.below(10_001) as u16;
+            let seller_gross = ((balance as u128) * (share as u128) / 10_000) as u64;
+            let buyer_refund = balance - seller_gross;
+            let dispute_fee = calculate_dispute_fee(&policy, &spot, balance, share).unwrap();
+            assert!(dispute_fee <= seller_gross, "dispute fee {dispute_fee} > seller gross {seller_gross}");
+            let seller_net = seller_gross - dispute_fee;
+            assert_eq!(buyer_refund as u128 + seller_net as u128 + dispute_fee as u128, balance as u128);
+        }
+    }
+
+    #[test]
+    fn edge_amounts() {
+        let auction = listing(MODE_AUCTION, 250, 1_000, 1_000);
+        // One base unit: fees round down to zero, nothing is lost.
+        assert_eq!(calculate_fee(&auction, &spot(1), 1).unwrap(), 0);
+        // Largest possible balance does not overflow.
+        assert!(calculate_fee(&auction, &spot(1), u64::MAX).is_ok());
+        // Full share to the buyer charges no fee.
+        assert_eq!(calculate_dispute_fee(&auction, &spot(100), 1_000_000, 0).unwrap(), 0);
+        // 100% fee policy on a fixed listing takes everything and no more.
+        assert_eq!(calculate_fee(&listing(MODE_FIXED, 10_000, 0, 10_000), &spot(5), 5).unwrap(), 5);
+    }
+
     #[test]
     fn dispute_fee_tracks_the_seller_share() {
         let fee = calculate_dispute_fee(
