@@ -110,6 +110,8 @@ async function main() {
       systemProgram: anchor.web3.SystemProgram.programId,
       tokenProgram: TOKEN_PROGRAM_ID,
       rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+      reviewer: seller.publicKey,
+      reviewAuthority,
     })
     .rpc();
 
@@ -142,6 +144,7 @@ async function main() {
       buyerAta,
       usdcMint: PAYMENT_MINT,
       tokenProgram: TOKEN_PROGRAM_ID,
+      proof: null,
     })
     .rpc();
 

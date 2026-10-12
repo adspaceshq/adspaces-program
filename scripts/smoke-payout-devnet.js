@@ -104,6 +104,7 @@ async function start() {
             buyerAta,
             usdcMint: PAYMENT_MINT,
             tokenProgram: TOKEN_PROGRAM_ID,
+            proof: null,
           })
           .rpc();
         console.log(`Refunded interrupted spot: ${candidate.publicKey}`);
@@ -210,6 +211,8 @@ async function start() {
       systemProgram: anchor.web3.SystemProgram.programId,
       tokenProgram: TOKEN_PROGRAM_ID,
       rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+      reviewer: seller.publicKey,
+      reviewAuthority,
     })
     .rpc();
   await program.methods

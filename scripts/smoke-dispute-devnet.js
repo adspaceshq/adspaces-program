@@ -83,7 +83,17 @@ async function main() {
   const treasuryBefore = (await getAccount(connection, treasuryAta)).amount;
   if (buyerBefore < PRICE) throw new Error("Buyer needs at least 1 devnet USDC");
 
-  const pendingDisputes = await program.account.disputeRecord.all();
+  // Skip dispute records in the pre-upgrade layout (leftovers on finalized spots) that no longer decode.
+  const rawDisputes = await connection.getProgramAccounts(program.programId, {
+    filters: [{ memcmp: program.coder.accounts.memcmp("disputeRecord") }],
+  });
+  const pendingDisputes = rawDisputes.flatMap(({ pubkey, account }) => {
+    try {
+      return [{ publicKey: pubkey, account: program.coder.accounts.decode("disputeRecord", account.data) }];
+    } catch {
+      return [];
+    }
+  });
   for (const pending of pendingDisputes) {
     if (!pending.account.buyer.equals(buyer.publicKey) || pending.account.decidedAt.toNumber() !== 0) {
       continue;
@@ -100,6 +110,7 @@ async function main() {
       .resolveDispute(5_000, Array(32).fill(3), "https://adspaces.fun/devnet-decision")
       .accountsStrict({
         resolver: seller.publicKey,
+        rentPayer: pending.account.rentPayer,
         config,
         listing: pendingSpot.listing,
         spot: pending.account.spot,
@@ -184,6 +195,8 @@ async function main() {
       systemProgram: anchor.web3.SystemProgram.programId,
       tokenProgram: TOKEN_PROGRAM_ID,
       rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+      reviewer: seller.publicKey,
+      reviewAuthority,
     })
     .rpc();
   await program.methods
@@ -218,6 +231,8 @@ async function main() {
     .raiseDispute(Array(32).fill(2), "https://adspaces.fun/devnet-evidence")
     .accountsStrict({
       buyer: buyer.publicKey,
+      rentPayer: seller.publicKey,
+      config,
       listing,
       spot,
       dispute,
@@ -229,6 +244,7 @@ async function main() {
     .resolveDispute(5_000, Array(32).fill(3), "https://adspaces.fun/devnet-decision")
     .accountsStrict({
       resolver: seller.publicKey,
+      rentPayer: seller.publicKey,
       config,
       listing,
       spot,
