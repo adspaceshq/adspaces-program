@@ -497,6 +497,8 @@ fn close_spot_reclaims_unfunded_vault() {
             spot,
             vault,
             token_program: token_program_id(),
+            seller_ata: empty_token_account(&mut env, &seller, &seller.pubkey()),
+            usdc_mint: env.usdc,
         }
         .to_account_metas(None),
     );
@@ -526,6 +528,8 @@ fn close_funded_spot_fails() {
             spot,
             vault,
             token_program: token_program_id(),
+            seller_ata: empty_token_account(&mut env, &seller, &seller.pubkey()),
+            usdc_mint: env.usdc,
         }
         .to_account_metas(None),
     );
@@ -1172,4 +1176,39 @@ fn seller_refund_after_proof_closes_proof_and_returns_its_rent() {
     assert_eq!(token_balance(&env.svm, &buyer_ata), PRICE);
     assert!(env.svm.get_account(&spot).is_none());
     assert!(env.svm.get_account(&proof).is_none(), "proof rent must not be stranded");
+}
+
+#[test]
+fn donated_tokens_cannot_block_closing_an_open_spot() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [30u8; 16], now + 30 * 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+
+    // Someone sends 1 base unit straight to the open spot's vault.
+    let (donor, donor_ata) = env.new_user(1_000);
+    let transfer = spl_token::instruction::transfer(&token_program_id(), &donor_ata, &vault, &donor.pubkey(), &[], 1).unwrap();
+    send(&mut env.svm, &[transfer], &donor, &[]).unwrap();
+
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
+    let close = new_ix(
+        program_id(),
+        adspaces::instruction::CloseSpot {}.data(),
+        adspaces::accounts::CloseSpot {
+            seller: seller.pubkey(),
+            listing,
+            spot,
+            vault,
+            seller_ata,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[close], &seller, &[]).unwrap();
+    assert_eq!(token_balance(&env.svm, &seller_ata), 1);
+    assert!(env.svm.get_account(&spot).is_none());
+    assert!(env.svm.get_account(&vault).is_none());
 }

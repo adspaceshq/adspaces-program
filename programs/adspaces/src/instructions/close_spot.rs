@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount};
+use anchor_spl::token::{self, Mint, Token, TokenAccount};
 
 use crate::{
     constants::*,
@@ -31,9 +31,16 @@ pub struct CloseSpot<'info> {
         constraint = vault.key() == spot.vault @ AdspacesError::Unauthorized,
         constraint = vault.mint == listing.mint @ AdspacesError::InvalidMint,
         constraint = vault.owner == spot.key() @ AdspacesError::Unauthorized,
-        constraint = vault.amount == 0 @ AdspacesError::VaultNotEmpty,
     )]
     pub vault: Account<'info, TokenAccount>,
+    /// Receives anything sent to the open spot's vault (donations), so nobody can block closing it.
+    #[account(
+        mut,
+        constraint = seller_ata.mint == listing.mint @ AdspacesError::InvalidMint,
+        constraint = seller_ata.owner == seller.key() @ AdspacesError::Unauthorized,
+    )]
+    pub seller_ata: Account<'info, TokenAccount>,
+    pub usdc_mint: Account<'info, Mint>,
     pub token_program: Program<'info, Token>,
 }
 
@@ -43,6 +50,22 @@ pub fn handle_close_spot(ctx: Context<CloseSpot>) -> Result<()> {
     let spot_bump = ctx.accounts.spot.bump;
     let signer_seeds: &[&[&[u8]]] =
         &[&[SPOT_SEED, listing_key.as_ref(), &[spot_index], &[spot_bump]]];
+
+    let swept = ctx.accounts.vault.amount;
+    if swept > 0 {
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                token::Transfer {
+                    from: ctx.accounts.vault.to_account_info(),
+                    to: ctx.accounts.seller_ata.to_account_info(),
+                    authority: ctx.accounts.spot.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            swept,
+        )?;
+    }
 
     token::close_account(CpiContext::new_with_signer(
         ctx.accounts.token_program.key(),

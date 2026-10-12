@@ -239,6 +239,8 @@ fn close_listing_requires_deadline_and_closed_spots() {
             spot: open_spot,
             vault: open_vault,
             token_program: token_program_id(),
+            seller_ata: empty_token_account(&mut env, &seller, &seller.pubkey()),
+            usdc_mint: env.usdc,
         }
         .to_account_metas(None),
     );
@@ -450,4 +452,19 @@ fn dispute_timeout_is_configurable_within_bounds() {
     assert!(set_timeout(&mut env, &authority, adspaces::constants::MAX_DISPUTE_TIMEOUT_SECONDS + 1).is_err());
     set_timeout(&mut env, &authority, 2 * DAY).unwrap();
     assert_eq!(read_config(&env.svm, &env.config).dispute_timeout_seconds, 2 * DAY);
+}
+
+fn empty_token_account(env: &mut Env, funder: &Keypair, owner: &Pubkey) -> Pubkey {
+    let account = Keypair::new();
+    let create = anchor_lang::solana_program::system_instruction::create_account(
+        &funder.pubkey(),
+        &account.pubkey(),
+        RENT_FUNDING,
+        spl_token_interface::state::Account::LEN as u64,
+        &token_program_id(),
+    );
+    send(&mut env.svm, &[create], funder, &[&account]).unwrap();
+    let init = spl_token::instruction::initialize_account(&token_program_id(), &account.pubkey(), &env.usdc, owner).unwrap();
+    send(&mut env.svm, &[init], funder, &[]).unwrap();
+    account.pubkey()
 }
