@@ -470,3 +470,62 @@ fn empty_token_account(env: &mut Env, funder: &Keypair, owner: &Pubkey) -> Pubke
     send(&mut env.svm, &[init], funder, &[]).unwrap();
     account.pubkey()
 }
+
+#[test]
+fn shortening_the_timeout_does_not_end_an_open_dispute_early() {
+    let mut env = Env::new();
+    let seller = new_seller(&mut env);
+    let now = env.clock().unix_timestamp;
+    let listing = create_listing(&mut env, &seller, 44, adspaces::constants::MODE_FIXED, now + DAY);
+    let (spot, vault) = add_spot(&mut env, &seller, &listing);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault).unwrap();
+
+    let opened_at = now + 8 * DAY;
+    env.warp_to_timestamp(opened_at);
+    let (dispute, _) = dispute_pda(&spot);
+    let raise = new_ix(
+        program_id(),
+        adspaces::instruction::RaiseDispute { evidence_hash: [0; 32], evidence_uri: String::new() }.data(),
+        adspaces::accounts::RaiseDispute {
+            buyer: buyer.pubkey(),
+            rent_payer: env.mint_authority.pubkey(),
+            config: env.config,
+            listing,
+            spot,
+            dispute,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[raise], &buyer, &[&env.mint_authority]).unwrap();
+
+    // The platform shortens the timeout to its minimum while this dispute is open.
+    let authority = env.mint_authority.insecure_clone();
+    set_timeout(&mut env, &authority, adspaces::constants::MIN_DISPUTE_TIMEOUT_SECONDS).unwrap();
+
+    let caller = new_seller(&mut env);
+    let timeout = new_ix(
+        program_id(),
+        adspaces::instruction::TimeoutDispute {}.data(),
+        adspaces::accounts::TimeoutDispute {
+            caller: caller.pubkey(),
+            config: env.config,
+            listing,
+            seller: seller.pubkey(),
+            spot,
+            dispute,
+            rent_payer: read_dispute(&env.svm, &dispute).rent_payer,
+            proof: None,
+            vault,
+            buyer_ata,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    );
+    // Well past the new minimum, but still inside the timeout the dispute was raised with.
+    env.warp_to_timestamp(opened_at + adspaces::constants::MIN_DISPUTE_TIMEOUT_SECONDS + 60);
+    assert!(send(&mut env.svm, &[timeout.clone()], &caller, &[]).is_err());
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+}
