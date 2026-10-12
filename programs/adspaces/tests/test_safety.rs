@@ -264,6 +264,7 @@ fn close_listing_requires_deadline_and_closed_spots() {
             buyer_ata,
             usdc_mint: env.usdc,
             token_program: token_program_id(),
+            proof: None,
         }
         .to_account_metas(None),
     );

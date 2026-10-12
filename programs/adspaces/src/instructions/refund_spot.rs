@@ -5,7 +5,7 @@ use crate::{
     constants::*,
     error::AdspacesError,
     events::SpotRefunded,
-    state::{Listing, Spot},
+    state::{Listing, ProofRecord, Spot},
 };
 
 #[derive(Accounts)]
@@ -42,6 +42,14 @@ pub struct RefundSpot<'info> {
     #[account(constraint = usdc_mint.key() == listing.mint @ AdspacesError::InvalidMint)]
     pub usdc_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
+    /// Proof submitted before a seller-initiated refund; closed so its rent returns to the seller.
+    #[account(
+        mut,
+        seeds = [PROOF_SEED, spot.key().as_ref()],
+        bump = proof.bump,
+        constraint = proof.spot == spot.key() @ AdspacesError::Unauthorized,
+    )]
+    pub proof: Option<Box<Account<'info, ProofRecord>>>,
 }
 
 pub fn handle_refund_spot(ctx: Context<RefundSpot>) -> Result<()> {
@@ -94,6 +102,9 @@ pub fn handle_refund_spot(ctx: Context<RefundSpot>) -> Result<()> {
         seller_initiated,
     });
 
+    if let Some(ref proof) = ctx.accounts.proof {
+        proof.close(ctx.accounts.seller.to_account_info())?;
+    }
     ctx.accounts.spot.close(ctx.accounts.seller.to_account_info())?;
 
     Ok(())

@@ -204,6 +204,7 @@ fn refund(
             buyer_ata: *buyer_ata,
             usdc_mint: env.usdc,
             token_program: token_program_id(),
+            proof: env.svm.get_account(&proof_pda(spot).0).map(|_| proof_pda(spot).0),
         }
         .to_account_metas(None),
     );
@@ -1149,4 +1150,26 @@ fn proof_uri_must_be_nonempty_and_bounded() {
     assert_eq!(read_proof(&env.svm, &proof).proof_uri, maximum_uri);
     assert!(read_spot(&env.svm, &spot).proof_submitted_at > 0);
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
+}
+
+#[test]
+fn seller_refund_after_proof_closes_proof_and_returns_its_rent() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [29; 16], now + 30 * 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+    env.warp_to_timestamp(now + 30 * 86_400 + 1);
+    submit_proof(&mut env, &seller, &listing, &spot);
+    let (proof, _) = proof_pda(&spot);
+    assert!(env.svm.get_account(&proof).is_some());
+
+    refund(&mut env, &seller, &seller.pubkey(), &listing, &spot, &vault, &buyer_ata).unwrap();
+
+    assert_eq!(token_balance(&env.svm, &buyer_ata), PRICE);
+    assert!(env.svm.get_account(&spot).is_none());
+    assert!(env.svm.get_account(&proof).is_none(), "proof rent must not be stranded");
 }
