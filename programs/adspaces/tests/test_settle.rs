@@ -97,10 +97,12 @@ fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) ->
             system_program: system_program::ID,
             token_program: token_program_id(),
             rent: rent::ID,
+            reviewer: env.mint_authority.pubkey(),
+            review_authority: env.review_authority,
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[ix], seller, &[]).unwrap();
+    send(&mut env.svm, &[ix], seller, &[&env.mint_authority]).unwrap();
     (spot, vault)
 }
 

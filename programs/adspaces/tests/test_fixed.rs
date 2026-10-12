@@ -161,10 +161,12 @@ fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) ->
             system_program: system_program::ID,
             token_program: token_program_id(),
             rent: rent::ID,
+            reviewer: env.mint_authority.pubkey(),
+            review_authority: env.review_authority,
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[ix], seller, &[]).unwrap();
+    send(&mut env.svm, &[ix], seller, &[&env.mint_authority]).unwrap();
 
     let stored = read_spot(&env.svm, &spot);
     assert_eq!(stored.price, price);
@@ -419,9 +421,43 @@ fn add_spot_after_deadline_fails() {
             system_program: system_program::ID,
             token_program: token_program_id(),
             rent: rent::ID,
+            reviewer: env.mint_authority.pubkey(),
+            review_authority: env.review_authority,
         }
         .to_account_metas(None),
     );
 
-    assert!(send(&mut env.svm, &[ix], &seller, &[]).is_err());
+    assert!(send(&mut env.svm, &[ix], &seller, &[&env.mint_authority]).is_err());
+}
+
+#[test]
+fn spot_added_without_the_review_authority_is_refused() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let listing = create_fixed_listing(&mut env, &seller, [31u8; 16]);
+    let (spot, _) = spot_pda(&listing, 1);
+    let (vault, _) = vault_pda(&spot);
+    // The seller alone can't add a spot after approval: a stranger posing as the reviewer is rejected.
+    let stranger = Keypair::new();
+    env.svm.airdrop(&stranger.pubkey(), 1_000_000_000).unwrap();
+    let ix = new_ix(
+        program_id(),
+        adspaces::instruction::AddSpot { price: PRICE }.data(),
+        adspaces::accounts::AddSpot {
+            seller: seller.pubkey(),
+            listing,
+            spot,
+            vault,
+            config: env.config,
+            usdc_mint: env.usdc,
+            system_program: system_program::ID,
+            token_program: token_program_id(),
+            rent: rent::ID,
+            reviewer: stranger.pubkey(),
+            review_authority: env.review_authority,
+        }
+        .to_account_metas(None),
+    );
+    assert!(send(&mut env.svm, &[ix], &seller, &[&stranger]).is_err());
 }

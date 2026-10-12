@@ -5,7 +5,7 @@ use crate::{
     constants::*,
     error::AdspacesError,
     events::SpotAdded,
-    state::{Config, Listing, Spot},
+    state::{Config, Listing, ReviewAuthority, Spot},
 };
 
 #[derive(Accounts)]
@@ -20,6 +20,15 @@ pub struct AddSpot<'info> {
         constraint = listing.status == LISTING_OPEN @ AdspacesError::ListingNotOpen,
     )]
     pub listing: Account<'info, Listing>,
+    /// Spots added after listing approval need the review authority's co-signature, like the listing itself.
+    pub reviewer: Signer<'info>,
+    #[account(
+        seeds = [REVIEW_AUTHORITY_SEED, config.key().as_ref()],
+        bump = review_authority.bump,
+        constraint = review_authority.config == config.key() @ AdspacesError::Unauthorized,
+        constraint = review_authority.authority == reviewer.key() @ AdspacesError::InvalidReviewAuthority,
+    )]
+    pub review_authority: Account<'info, ReviewAuthority>,
     #[account(
         init,
         payer = seller,
