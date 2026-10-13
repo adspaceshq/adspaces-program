@@ -163,6 +163,12 @@ pub struct DisputeTimeoutUpdated {
 }
 
 #[event]
+pub struct ProtocolPauseSet {
+    pub authority: Pubkey,
+    pub paused: bool,
+}
+
+#[event]
 pub struct DisputeTimedOut {
     pub listing: Pubkey,
     pub index: u8,

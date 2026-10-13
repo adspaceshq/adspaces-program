@@ -7,6 +7,8 @@ use anchor_lang::{
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 
+use base64::Engine;
+
 use common::*;
 
 const PRICE: u64 = 100_000_000;
@@ -165,7 +167,9 @@ fn pause_blocks_claims_until_unpaused() {
     forged.accounts[0].is_signer = true;
     assert!(send(&mut env.svm, &[forged], &stranger, &[]).is_err());
 
-    set_paused(&mut env, true).unwrap();
+    let paused = set_paused(&mut env, true).unwrap();
+    let expected = base64::engine::general_purpose::STANDARD.encode(anchor_lang::Event::data(&adspaces::events::ProtocolPauseSet { authority: env.mint_authority.pubkey(), paused: true }));
+    assert!(paused.logs.iter().any(|log| log == &format!("Program data: {expected}")), "pausing must emit ProtocolPauseSet");
     assert!(read_config(&env.svm, &env.config).paused);
     assert!(claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault).is_err());
     assert_eq!(token_balance(&env.svm, &vault), 0);

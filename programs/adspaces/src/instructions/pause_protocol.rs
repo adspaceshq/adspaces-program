@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::{constants::CONFIG_SEED, error::AdspacesError, state::Config};
+use crate::{constants::CONFIG_SEED, error::AdspacesError, events::ProtocolPauseSet, state::Config};
 
 #[derive(Accounts)]
 pub struct PauseProtocol<'info> {
@@ -16,5 +16,10 @@ pub struct PauseProtocol<'info> {
 
 pub fn handle_pause_protocol(ctx: Context<PauseProtocol>, paused: bool) -> Result<()> {
     ctx.accounts.config.paused = paused;
+    // Emitted so monitoring and indexers can see every pause and resume on-chain.
+    emit!(ProtocolPauseSet {
+        authority: ctx.accounts.authority.key(),
+        paused,
+    });
     Ok(())
 }
