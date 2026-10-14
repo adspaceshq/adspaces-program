@@ -21,18 +21,18 @@ custom-panic = []
 devnet-short-review = []
 
 [dependencies]
-anchor-lang = "=1.1.2"
-anchor-spl = "=1.1.2"
+anchor-lang = "=1.2.1"
+anchor-spl = "=1.2.1"
 
 [dev-dependencies]
 base64 = "0.22"
 bincode = "1"
-litesvm = "0.10.0"
-solana-message = "3.0.1"
-solana-account = "3.4.0"
-solana-transaction = "3.0.2"
-solana-signer = "3.0.0"
-solana-keypair = "3.0.1"
+litesvm = "0.16.0"
+solana-message = "4.2.4"
+solana-account = "4.3.0"
+solana-transaction = "4.1.5"
+solana-signer = "3.0.1"
+solana-keypair = "3.1.2"
 spl-token = { version = "9", features = ["no-entrypoint"] }
 spl-token-interface = "2"
 
