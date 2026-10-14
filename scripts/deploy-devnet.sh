@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Upgrades the existing devnet program in place. The program ID never changes, and upgrading needs
-# only its address plus the upgrade authority (the program keypair is only needed for a first deploy),
-# so this script refuses to run unless the program already exists on devnet.
-readonly program_id="6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW"
+# Deploys or upgrades the devnet program. A first deploy needs the program keypair (kept OUTSIDE the
+# repo so builds can never delete it) and checks it matches program_id. Once the program exists,
+# upgrades need only its address plus the upgrade authority.
+readonly program_id="8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5"
 readonly devnet_url="https://api.devnet.solana.com"
 readonly script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly repo_root="$(cd "$script_dir/.." && pwd)"
 readonly wallet="${ADSPACES_DEPLOY_WALLET:-$HOME/.config/solana/id.json}"
+readonly program_keypair="${ADSPACES_PROGRAM_KEYPAIR:-$HOME/.config/solana/programs/adspaces-devnet-v3-program.json}"
 readonly program_binary="$repo_root/target/deploy/adspaces.so"
 
 if [[ "${1:-}" != "--confirm" ]]; then
@@ -35,15 +36,27 @@ balance="$(solana balance "$deployer" --url "$devnet_url")"
 echo "Deployer: $deployer"
 echo "Devnet balance: $balance"
 
-program_info="$(solana program show "$program_id" --url "$devnet_url" 2>/dev/null)" || {
-  echo "Program $program_id is not on devnet; this script only upgrades it" >&2
-  exit 1
-}
-authority="$(awk -F': ' '/^(Upgrade )?Authority:/{print $2}' <<<"$program_info")"
-[[ "$authority" == "$deployer" ]] || {
-  echo "Upgrade authority is $authority, not $deployer" >&2
-  exit 1
-}
+if program_info="$(solana program show "$program_id" --url "$devnet_url" 2>/dev/null)"; then
+  mode="upgrade"
+  program_arg="$program_id"
+  authority="$(awk -F': ' '/^(Upgrade )?Authority:/{print $2}' <<<"$program_info")"
+  [[ "$authority" == "$deployer" ]] || {
+    echo "Upgrade authority is $authority, not $deployer" >&2
+    exit 1
+  }
+else
+  mode="first deploy"
+  [[ -f "$program_keypair" ]] || {
+    echo "First deploy needs the program keypair: $program_keypair" >&2
+    exit 1
+  }
+  [[ "$(solana address -k "$program_keypair")" == "$program_id" ]] || {
+    echo "Program keypair does not resolve to $program_id" >&2
+    exit 1
+  }
+  program_arg="$program_keypair"
+fi
+echo "Mode: $mode of $program_id"
 
 bash "$script_dir/build-program.sh"
 [[ -f "$program_binary" ]] || {
@@ -55,7 +68,7 @@ echo "Binary SHA-256: $(sha256sum "$program_binary" | awk '{print $1}')"
 solana program deploy "$program_binary" \
   --url "$devnet_url" \
   --keypair "$wallet" \
-  --program-id "$program_id" \
+  --program-id "$program_arg" \
   --upgrade-authority "$wallet"
 
 solana program show "$program_id" --url "$devnet_url"
