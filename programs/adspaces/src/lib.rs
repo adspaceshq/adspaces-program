@@ -13,7 +13,7 @@ pub use events::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW");
+declare_id!("8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5");
 
 #[program]
 pub mod adspaces {

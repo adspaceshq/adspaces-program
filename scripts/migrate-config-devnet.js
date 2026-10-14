@@ -3,7 +3,7 @@ const path = require("node:path");
 const anchor = require("@coral-xyz/anchor");
 
 const PROGRAM_ID = new anchor.web3.PublicKey(
-  "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW",
+  "8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5",
 );
 const RPC_URL = process.env.ADSPACES_DEVNET_RPC || "https://api.devnet.solana.com";
 
