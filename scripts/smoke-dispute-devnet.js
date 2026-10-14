@@ -10,7 +10,7 @@ const {
 } = require("@solana/spl-token");
 
 const PROGRAM_ID = new anchor.web3.PublicKey(
-  "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW",
+  "8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5",
 );
 const PAYMENT_MINT = new anchor.web3.PublicKey(
   "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",

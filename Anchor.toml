@@ -8,10 +8,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-adspaces = "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW"
+adspaces = "8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5"
 
 [programs.devnet]
-adspaces = "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW"
+adspaces = "8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5"
 
 [provider]
 cluster = "localnet"

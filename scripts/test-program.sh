@@ -20,7 +20,7 @@ bash "$script_dir/build-program.sh"
 ledger="$(mktemp -d /tmp/adspaces-validator.XXXXXX)"
 readonly ledger
 solana-test-validator --quiet --ledger "$ledger" \
-  --upgradeable-program 6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW \
+  --upgradeable-program 8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5 \
   target/deploy/adspaces.so "$wallet" &
 validator_pid=$!
 cleanup() {
