@@ -57,6 +57,13 @@ pub fn review_authority_pda(config: &Pubkey) -> (Pubkey, u8) {
     )
 }
 
+pub fn pause_guardian_pda(config: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[adspaces::constants::PAUSE_GUARDIAN_SEED, config.as_ref()],
+        &program_id(),
+    )
+}
+
 pub fn listing_pda(seller: &Pubkey, slug_hash: &[u8; 16]) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
@@ -333,6 +340,15 @@ pub fn read_review_authority(
     let account = svm.get_account(review_authority).unwrap();
     let mut data: &[u8] = &account.data;
     adspaces::state::ReviewAuthority::try_deserialize(&mut data).unwrap()
+}
+
+pub fn read_pause_guardian(
+    svm: &LiteSVM,
+    pause_guardian: &Pubkey,
+) -> adspaces::state::PauseGuardian {
+    let account = svm.get_account(pause_guardian).unwrap();
+    let mut data: &[u8] = &account.data;
+    adspaces::state::PauseGuardian::try_deserialize(&mut data).unwrap()
 }
 
 pub fn read_authority_transfer(
