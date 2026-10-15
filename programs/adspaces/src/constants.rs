@@ -10,6 +10,9 @@ pub const AUTHORITY_TRANSFER_SEED: &[u8] = b"authority_transfer";
 pub const REVIEW_AUTHORITY_SEED: &[u8] = b"review_authority";
 
 #[constant]
+pub const PAUSE_GUARDIAN_SEED: &[u8] = b"pause_guardian";
+
+#[constant]
 pub const LISTING_SEED: &[u8] = b"listing";
 
 #[constant]

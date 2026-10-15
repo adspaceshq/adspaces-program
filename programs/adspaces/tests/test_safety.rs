@@ -15,6 +15,18 @@ const PRICE: u64 = 100_000_000;
 const DAY: i64 = 86_400;
 
 fn create_listing(env: &mut Env, seller: &Keypair, slug: u8, mode: u8, deadline: i64) -> Pubkey {
+    try_create_listing(env, seller, slug, mode, deadline).unwrap();
+    listing_pda(&seller.pubkey(), &[slug; 16]).0
+}
+
+#[allow(clippy::result_large_err)]
+fn try_create_listing(
+    env: &mut Env,
+    seller: &Keypair,
+    slug: u8,
+    mode: u8,
+    deadline: i64,
+) -> litesvm::types::TransactionResult {
     let slug_hash = [slug; 16];
     let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
     let auction = mode == adspaces::constants::MODE_AUCTION;
@@ -47,11 +59,22 @@ fn create_listing(env: &mut Env, seller: &Keypair, slug: u8, mode: u8, deadline:
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[ix], seller, &[&env.mint_authority]).unwrap();
-    listing
+    send(&mut env.svm, &[ix], seller, &[&env.mint_authority])
 }
 
 fn add_spot(env: &mut Env, seller: &Keypair, listing: &Pubkey) -> (Pubkey, Pubkey) {
+    let index = read_listing(&env.svm, listing).spot_count;
+    let (spot, _) = spot_pda(listing, index);
+    try_add_spot(env, seller, listing).unwrap();
+    (spot, vault_pda(&spot).0)
+}
+
+#[allow(clippy::result_large_err)]
+fn try_add_spot(
+    env: &mut Env,
+    seller: &Keypair,
+    listing: &Pubkey,
+) -> litesvm::types::TransactionResult {
     let index = read_listing(&env.svm, listing).spot_count;
     let (spot, _) = spot_pda(listing, index);
     let (vault, _) = vault_pda(&spot);
@@ -74,8 +97,7 @@ fn add_spot(env: &mut Env, seller: &Keypair, listing: &Pubkey) -> (Pubkey, Pubke
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[ix], seller, &[&env.mint_authority]).unwrap();
-    (spot, vault)
+    send(&mut env.svm, &[ix], seller, &[&env.mint_authority])
 }
 
 #[allow(clippy::result_large_err)]
@@ -107,17 +129,26 @@ fn claim(
 
 #[allow(clippy::result_large_err)]
 fn set_paused(env: &mut Env, paused: bool) -> litesvm::types::TransactionResult {
+    let authority = env.mint_authority.insecure_clone();
+    pause_protocol_as(env, &authority, paused)
+}
+
+#[allow(clippy::result_large_err)]
+fn pause_protocol_as(
+    env: &mut Env,
+    signer: &Keypair,
+    paused: bool,
+) -> litesvm::types::TransactionResult {
     let ix = new_ix(
         program_id(),
         adspaces::instruction::PauseProtocol { paused }.data(),
         adspaces::accounts::PauseProtocol {
-            authority: env.mint_authority.pubkey(),
+            authority: signer.pubkey(),
             config: env.config,
         }
         .to_account_metas(None),
     );
-    let authority = env.mint_authority.insecure_clone();
-    send(&mut env.svm, &[ix], &authority, &[])
+    send(&mut env.svm, &[ix], signer, &[])
 }
 
 fn new_seller(env: &mut Env) -> Keypair {
@@ -703,4 +734,396 @@ fn shortening_the_timeout_does_not_end_an_open_dispute_early() {
     env.warp_to_timestamp(opened_at + adspaces::constants::MIN_DISPUTE_TIMEOUT_SECONDS + 60);
     assert!(send(&mut env.svm, &[timeout.clone()], &caller, &[]).is_err());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
+}
+
+#[allow(clippy::result_large_err)]
+fn initialize_guardian(
+    env: &mut Env,
+    signer: &Keypair,
+    guardian: Pubkey,
+) -> litesvm::types::TransactionResult {
+    let ix = new_ix(
+        program_id(),
+        adspaces::instruction::InitializePauseGuardian { guardian }.data(),
+        adspaces::accounts::InitializePauseGuardian {
+            authority: signer.pubkey(),
+            config: env.config,
+            pause_guardian: pause_guardian_pda(&env.config).0,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    env.svm.expire_blockhash();
+    send(&mut env.svm, &[ix], signer, &[])
+}
+
+#[allow(clippy::result_large_err)]
+fn update_guardian(
+    env: &mut Env,
+    signer: &Keypair,
+    guardian: Pubkey,
+) -> litesvm::types::TransactionResult {
+    let ix = new_ix(
+        program_id(),
+        adspaces::instruction::UpdatePauseGuardian { guardian }.data(),
+        adspaces::accounts::UpdatePauseGuardian {
+            authority: signer.pubkey(),
+            config: env.config,
+            pause_guardian: pause_guardian_pda(&env.config).0,
+        }
+        .to_account_metas(None),
+    );
+    env.svm.expire_blockhash();
+    send(&mut env.svm, &[ix], signer, &[])
+}
+
+#[allow(clippy::result_large_err)]
+fn guardian_pause(env: &mut Env, signer: &Keypair) -> litesvm::types::TransactionResult {
+    let ix = new_ix(
+        program_id(),
+        adspaces::instruction::GuardianPause {}.data(),
+        adspaces::accounts::GuardianPause {
+            guardian: signer.pubkey(),
+            config: env.config,
+            pause_guardian: pause_guardian_pda(&env.config).0,
+        }
+        .to_account_metas(None),
+    );
+    env.svm.expire_blockhash();
+    send(&mut env.svm, &[ix], signer, &[])
+}
+
+fn emitted(result: &litesvm::types::TransactionMetadata, event: &impl anchor_lang::Event) -> bool {
+    let expected = base64::engine::general_purpose::STANDARD.encode(event.data());
+    result
+        .logs
+        .iter()
+        .any(|log| log == &format!("Program data: {expected}"))
+}
+
+/// Config authority with a guardian already set, as on a live deployment after the handover.
+fn env_with_guardian() -> (Env, Keypair, Keypair) {
+    let mut env = Env::new();
+    let authority = env.mint_authority.insecure_clone();
+    let guardian = new_seller(&mut env);
+    initialize_guardian(&mut env, &authority, guardian.pubkey()).unwrap();
+    (env, authority, guardian)
+}
+
+#[test]
+fn only_config_authority_sets_the_pause_guardian() {
+    use adspaces::error::AdspacesError;
+
+    let mut env = Env::new();
+    let authority = env.mint_authority.insecure_clone();
+    let stranger = new_seller(&mut env);
+    let guardian = new_seller(&mut env);
+    let (pause_guardian, bump) = pause_guardian_pda(&env.config);
+
+    // Existing configs have no guardian until one is initialized, so nobody can guardian-pause.
+    assert!(guardian_pause(&mut env, &guardian).is_err());
+    assert!(!read_config(&env.svm, &env.config).paused);
+
+    assert_program_error(
+        initialize_guardian(&mut env, &stranger, guardian.pubkey()),
+        AdspacesError::Unauthorized,
+    );
+    assert_program_error(
+        initialize_guardian(&mut env, &authority, Pubkey::default()),
+        AdspacesError::InvalidPauseGuardian,
+    );
+    let initialized = initialize_guardian(&mut env, &authority, guardian.pubkey()).unwrap();
+    assert!(
+        emitted(
+            &initialized,
+            &adspaces::events::PauseGuardianSet {
+                authority: authority.pubkey(),
+                previous_guardian: Pubkey::default(),
+                guardian: guardian.pubkey(),
+            }
+        ),
+        "initializing must emit PauseGuardianSet"
+    );
+    let stored = read_pause_guardian(&env.svm, &pause_guardian);
+    assert_eq!(stored.config, env.config);
+    assert_eq!(stored.guardian, guardian.pubkey());
+    assert_eq!(stored.bump, bump);
+    assert!(initialize_guardian(&mut env, &authority, stranger.pubkey()).is_err());
+
+    // Neither a stranger nor the guardian itself can rotate the guardian.
+    for intruder in [&stranger, &guardian] {
+        assert_program_error(
+            update_guardian(&mut env, intruder, intruder.pubkey()),
+            AdspacesError::Unauthorized,
+        );
+    }
+    let replacement = new_seller(&mut env);
+    let updated = update_guardian(&mut env, &authority, replacement.pubkey()).unwrap();
+    assert!(
+        emitted(
+            &updated,
+            &adspaces::events::PauseGuardianSet {
+                authority: authority.pubkey(),
+                previous_guardian: guardian.pubkey(),
+                guardian: replacement.pubkey(),
+            }
+        ),
+        "updating must emit PauseGuardianSet"
+    );
+    assert_eq!(
+        read_pause_guardian(&env.svm, &pause_guardian).guardian,
+        replacement.pubkey()
+    );
+    assert_program_error(
+        guardian_pause(&mut env, &guardian),
+        AdspacesError::Unauthorized,
+    );
+    guardian_pause(&mut env, &replacement).unwrap();
+    assert!(read_config(&env.svm, &env.config).paused);
+}
+
+#[test]
+fn guardian_pauses_but_only_config_authority_unpauses() {
+    use adspaces::error::AdspacesError;
+
+    let (mut env, authority, guardian) = env_with_guardian();
+    let seller = new_seller(&mut env);
+    let now = env.clock().unix_timestamp;
+    let listing = create_listing(
+        &mut env,
+        &seller,
+        45,
+        adspaces::constants::MODE_FIXED,
+        now + DAY,
+    );
+    let (spot, vault) = add_spot(&mut env, &seller, &listing);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+
+    let stranger = new_seller(&mut env);
+    assert_program_error(
+        guardian_pause(&mut env, &stranger),
+        AdspacesError::Unauthorized,
+    );
+    assert!(!read_config(&env.svm, &env.config).paused);
+
+    let paused = guardian_pause(&mut env, &guardian).unwrap();
+    assert!(
+        emitted(
+            &paused,
+            &adspaces::events::ProtocolPauseSet {
+                authority: guardian.pubkey(),
+                paused: true,
+            }
+        ),
+        "guardian pause must emit ProtocolPauseSet"
+    );
+    assert!(read_config(&env.svm, &env.config).paused);
+    // Pausing again is a no-op that still succeeds, so a guardian racing the multisig never fails.
+    guardian_pause(&mut env, &guardian).unwrap();
+    assert!(read_config(&env.svm, &env.config).paused);
+
+    assert_program_error(
+        claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault),
+        AdspacesError::ProtocolPaused,
+    );
+    assert_eq!(token_balance(&env.svm, &vault), 0);
+    assert_program_error(
+        try_add_spot(&mut env, &seller, &listing),
+        AdspacesError::ProtocolPaused,
+    );
+    assert_program_error(
+        try_create_listing(
+            &mut env,
+            &seller,
+            46,
+            adspaces::constants::MODE_FIXED,
+            now + DAY,
+        ),
+        AdspacesError::ProtocolPaused,
+    );
+
+    // The guardian has no say over pause_protocol, in either direction.
+    for paused in [false, true] {
+        env.svm.expire_blockhash();
+        assert_program_error(
+            pause_protocol_as(&mut env, &guardian, paused),
+            AdspacesError::Unauthorized,
+        );
+    }
+    assert!(read_config(&env.svm, &env.config).paused);
+
+    env.svm.expire_blockhash();
+    pause_protocol_as(&mut env, &authority, false).unwrap();
+    assert!(!read_config(&env.svm, &env.config).paused);
+    env.svm.expire_blockhash();
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault).unwrap();
+    assert_eq!(token_balance(&env.svm, &vault), PRICE);
+}
+
+#[test]
+fn disabled_guardian_cannot_pause() {
+    use adspaces::error::AdspacesError;
+
+    let (mut env, authority, guardian) = env_with_guardian();
+    // Pubkey::default() is the documented disabled value; nobody holds its key.
+    update_guardian(&mut env, &authority, Pubkey::default()).unwrap();
+    assert_eq!(
+        read_pause_guardian(&env.svm, &pause_guardian_pda(&env.config).0).guardian,
+        Pubkey::default()
+    );
+    assert_program_error(
+        guardian_pause(&mut env, &guardian),
+        AdspacesError::Unauthorized,
+    );
+    assert!(!read_config(&env.svm, &env.config).paused);
+
+    // Re-enabling needs no re-initialization.
+    update_guardian(&mut env, &authority, guardian.pubkey()).unwrap();
+    guardian_pause(&mut env, &guardian).unwrap();
+    assert!(read_config(&env.svm, &env.config).paused);
+}
+
+#[test]
+fn payouts_refunds_and_disputes_still_settle_while_guardian_paused() {
+    let (mut env, _, guardian) = env_with_guardian();
+    let seller = new_seller(&mut env);
+    let now = env.clock().unix_timestamp;
+    let listing = create_listing(
+        &mut env,
+        &seller,
+        47,
+        adspaces::constants::MODE_FIXED,
+        now + DAY,
+    );
+    let (paid_spot, paid_vault) = add_spot(&mut env, &seller, &listing);
+    let (refunded_spot, refunded_vault) = add_spot(&mut env, &seller, &listing);
+    let (disputed_spot, disputed_vault) = add_spot(&mut env, &seller, &listing);
+    let mut buyers = Vec::new();
+    for (spot, vault) in [
+        (paid_spot, paid_vault),
+        (refunded_spot, refunded_vault),
+        (disputed_spot, disputed_vault),
+    ] {
+        let (buyer, buyer_ata) = env.new_user(PRICE);
+        claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault).unwrap();
+        buyers.push((buyer, buyer_ata));
+    }
+    guardian_pause(&mut env, &guardian).unwrap();
+
+    // The seller delivers on one spot and refunds another, both while paused.
+    env.warp_to_timestamp(now + DAY);
+    let (paid_proof, _) = proof_pda(&paid_spot);
+    let proof = new_ix(
+        program_id(),
+        adspaces::instruction::SubmitProof {
+            proof_hash: [7; 32],
+            proof_uri: "https://adspaces.test/proof".to_string(),
+        }
+        .data(),
+        adspaces::accounts::SubmitProof {
+            seller: seller.pubkey(),
+            rent_payer: env.rent_payer(),
+            listing,
+            spot: paid_spot,
+            proof: paid_proof,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[proof], &seller, &[&env.mint_authority]).unwrap();
+    let refund = new_ix(
+        program_id(),
+        adspaces::instruction::RefundSpot {}.data(),
+        adspaces::accounts::RefundSpot {
+            caller: seller.pubkey(),
+            listing,
+            rent_payer: env.rent_payer(),
+            spot: refunded_spot,
+            vault: refunded_vault,
+            buyer_ata: buyers[1].1,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+            proof: None,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[refund], &seller, &[]).unwrap();
+    assert_eq!(token_balance(&env.svm, &buyers[1].1), PRICE);
+
+    // The undelivered spot's buyer can still dispute it.
+    let opened_at = now + 8 * DAY;
+    env.warp_to_timestamp(opened_at);
+    let (dispute, _) = dispute_pda(&disputed_spot);
+    let raise = new_ix(
+        program_id(),
+        adspaces::instruction::RaiseDispute {
+            evidence_hash: [0; 32],
+            evidence_uri: String::new(),
+        }
+        .data(),
+        adspaces::accounts::RaiseDispute {
+            buyer: buyers[2].0.pubkey(),
+            rent_payer: env.mint_authority.pubkey(),
+            config: env.config,
+            listing,
+            spot: disputed_spot,
+            dispute,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[raise], &buyers[2].0, &[&env.mint_authority]).unwrap();
+
+    // The delivered spot pays out once its review window ends.
+    env.warp_to_timestamp(opened_at + adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS);
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
+    let treasury = env.treasury;
+    let treasury_ata = empty_token_account(&mut env, &seller, &treasury);
+    let withdraw = new_ix(
+        program_id(),
+        adspaces::instruction::WithdrawSeller {}.data(),
+        adspaces::accounts::WithdrawSeller {
+            caller: seller.pubkey(),
+            listing,
+            seller: seller.pubkey(),
+            rent_payer: env.rent_payer(),
+            spot: paid_spot,
+            vault: paid_vault,
+            seller_ata,
+            treasury_ata,
+            proof: paid_proof,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[withdraw], &seller, &[]).unwrap();
+    let fee = PRICE * 250 / 10_000;
+    assert_eq!(token_balance(&env.svm, &seller_ata), PRICE - fee);
+    assert_eq!(token_balance(&env.svm, &treasury_ata), fee);
+
+    // The unresolved dispute still times out to a full refund.
+    env.warp_to_timestamp(opened_at + adspaces::constants::DEFAULT_DISPUTE_TIMEOUT_SECONDS);
+    let caller = new_seller(&mut env);
+    let timeout = new_ix(
+        program_id(),
+        adspaces::instruction::TimeoutDispute {}.data(),
+        adspaces::accounts::TimeoutDispute {
+            caller: caller.pubkey(),
+            config: env.config,
+            listing,
+            spot: disputed_spot,
+            dispute,
+            rent_payer: env.rent_payer(),
+            proof: None,
+            vault: disputed_vault,
+            buyer_ata: buyers[2].1,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    );
+    send(&mut env.svm, &[timeout], &caller, &[]).unwrap();
+    assert_eq!(token_balance(&env.svm, &buyers[2].1), PRICE);
+    assert!(read_config(&env.svm, &env.config).paused);
 }

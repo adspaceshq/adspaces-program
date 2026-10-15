@@ -96,4 +96,6 @@ pub enum AdspacesError {
     DisputeNotTimedOut,
     #[msg("Dispute timeout is outside the allowed range.")]
     InvalidDisputeTimeout,
+    #[msg("Pause guardian must be a nondefault address.")]
+    InvalidPauseGuardian,
 }

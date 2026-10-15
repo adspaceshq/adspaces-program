@@ -127,6 +127,24 @@ pub mod adspaces {
         instructions::pause_protocol::handle_pause_protocol(ctx, paused)
     }
 
+    pub fn initialize_pause_guardian(
+        ctx: Context<InitializePauseGuardian>,
+        guardian: Pubkey,
+    ) -> Result<()> {
+        instructions::pause_guardian::handle_initialize_pause_guardian(ctx, guardian)
+    }
+
+    pub fn update_pause_guardian(
+        ctx: Context<UpdatePauseGuardian>,
+        guardian: Pubkey,
+    ) -> Result<()> {
+        instructions::pause_guardian::handle_update_pause_guardian(ctx, guardian)
+    }
+
+    pub fn guardian_pause(ctx: Context<GuardianPause>) -> Result<()> {
+        instructions::pause_guardian::handle_guardian_pause(ctx)
+    }
+
     pub fn place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
         instructions::place_bid::handle_place_bid(ctx, amount)
     }

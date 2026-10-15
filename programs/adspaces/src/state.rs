@@ -33,6 +33,16 @@ pub struct ReviewAuthority {
     pub bump: u8,
 }
 
+/// A key that can pause the protocol but never unpause it, so an incident does not wait on the
+/// config authority's multisig. `Pubkey::default()` means the guardian is disabled.
+#[account]
+#[derive(InitSpace)]
+pub struct PauseGuardian {
+    pub config: Pubkey,
+    pub guardian: Pubkey,
+    pub bump: u8,
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct Listing {
