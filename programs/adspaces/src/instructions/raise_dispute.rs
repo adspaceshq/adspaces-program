@@ -26,8 +26,8 @@ pub struct RaiseDispute<'info> {
         constraint = spot.status == SPOT_FUNDED @ AdspacesError::SpotNotFunded,
     )]
     pub spot: Account<'info, Spot>,
-    /// Platform key that pays the dispute's rent, so buyers never need SOL. Co-signs the raise.
-    #[account(mut)]
+    /// The listing's rent payer funds the dispute's rent, so buyers never need SOL. Co-signs the raise.
+    #[account(mut, address = listing.rent_payer @ AdspacesError::Unauthorized)]
     pub rent_payer: Signer<'info>,
     #[account(
         init,

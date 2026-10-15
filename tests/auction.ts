@@ -99,6 +99,7 @@ describe("auction spots", () => {
       .accountsStrict({
         seller: wallet.publicKey,
         reviewer: wallet.publicKey,
+        rentPayer: wallet.publicKey,
         listing,
         config,
         reviewAuthority,
@@ -111,6 +112,9 @@ describe("auction spots", () => {
       .addSpot(startPrice)
       .accountsStrict({
         seller: wallet.publicKey,
+        rentPayer: wallet.publicKey,
+        reviewer: wallet.publicKey,
+        reviewAuthority,
         config,
         listing,
         spot,
@@ -260,6 +264,7 @@ describe("auction spots", () => {
       .accountsStrict({
         seller: wallet.publicKey,
         reviewer: wallet.publicKey,
+        rentPayer: wallet.publicKey,
         listing: doubleListing,
         config,
         reviewAuthority,
@@ -271,6 +276,9 @@ describe("auction spots", () => {
       .addSpot(startPrice)
       .accountsStrict({
         seller: wallet.publicKey,
+        rentPayer: wallet.publicKey,
+        reviewer: wallet.publicKey,
+        reviewAuthority,
         config,
         listing: doubleListing,
         spot: doubleSpot,

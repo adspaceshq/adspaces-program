@@ -99,8 +99,15 @@ async function main() {
       continue;
     }
     const pendingSpot = await program.account.spot.fetch(pending.account.spot);
-    const pendingListing = await program.account.listing.fetch(pendingSpot.listing);
-    if (!pendingListing.seller.equals(seller.publicKey) || pendingSpot.status !== 4) continue;
+    // Listings in the layout before rent_payer no longer decode; skip them.
+    const pendingListing = await program.account.listing.fetch(pendingSpot.listing).catch(() => null);
+    if (
+      !pendingListing ||
+      !pendingListing.seller.equals(seller.publicKey) ||
+      pendingSpot.status !== 4
+    ) {
+      continue;
+    }
 
     const [pendingProof] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("proof"), pending.account.spot.toBuffer()],
@@ -176,6 +183,7 @@ async function main() {
     .accountsStrict({
       seller: seller.publicKey,
       reviewer: seller.publicKey,
+      rentPayer: seller.publicKey,
       listing,
       config,
       reviewAuthority,
@@ -187,6 +195,7 @@ async function main() {
     .addSpot(new anchor.BN(PRICE.toString()))
     .accountsStrict({
       seller: seller.publicKey,
+      rentPayer: seller.publicKey,
       config,
       listing,
       spot,
@@ -219,6 +228,7 @@ async function main() {
     .submitProof(Array(32).fill(1), "https://adspaces.fun/devnet-proof")
     .accountsStrict({
       seller: seller.publicKey,
+      rentPayer: seller.publicKey,
       listing,
       spot,
       proof,

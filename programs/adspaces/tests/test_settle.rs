@@ -1,7 +1,7 @@
 mod common;
 
 use anchor_lang::{
-    solana_program::{rent, system_program},
+    solana_program::{instruction::Instruction, rent, system_program},
     Event, InstructionData, ToAccountMetas,
 };
 use base64::Engine;
@@ -68,6 +68,7 @@ fn create_fixed_listing_with_review(
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
             listing,
             config: env.config,
             review_authority: env.review_authority,
@@ -98,6 +99,7 @@ fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) ->
             token_program: token_program_id(),
             rent: rent::ID,
             reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
             review_authority: env.review_authority,
         }
         .to_account_metas(None),
@@ -171,6 +173,7 @@ fn withdraw(
             caller: caller.pubkey(),
             listing: *listing,
             seller: *seller,
+            rent_payer: env.rent_payer(),
             spot: *spot,
             vault: *vault,
             seller_ata: *seller_ata,
@@ -188,7 +191,6 @@ fn withdraw(
 fn refund(
     env: &mut Env,
     caller: &Keypair,
-    seller: &Pubkey,
     listing: &Pubkey,
     spot: &Pubkey,
     vault: &Pubkey,
@@ -200,13 +202,16 @@ fn refund(
         adspaces::accounts::RefundSpot {
             caller: caller.pubkey(),
             listing: *listing,
-            seller: *seller,
+            rent_payer: env.rent_payer(),
             spot: *spot,
             vault: *vault,
             buyer_ata: *buyer_ata,
             usdc_mint: env.usdc,
             token_program: token_program_id(),
-            proof: env.svm.get_account(&proof_pda(spot).0).map(|_| proof_pda(spot).0),
+            proof: env
+                .svm
+                .get_account(&proof_pda(spot).0)
+                .map(|_| proof_pda(spot).0),
         }
         .to_account_metas(None),
     );
@@ -231,6 +236,7 @@ fn try_submit_proof_with_uri(
         .data(),
         adspaces::accounts::SubmitProof {
             seller: seller.pubkey(),
+            rent_payer: env.rent_payer(),
             listing: *listing,
             spot: *spot,
             proof,
@@ -238,7 +244,7 @@ fn try_submit_proof_with_uri(
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[ix], seller, &[])
+    send(&mut env.svm, &[ix], seller, &[&env.mint_authority])
 }
 
 #[allow(clippy::result_large_err)]
@@ -482,31 +488,55 @@ fn settlement_accounts_for_tokens_sent_directly_to_vault() {
 }
 
 #[test]
-fn close_spot_reclaims_unfunded_vault() {
+fn close_spot_returns_unfunded_spot_rent_to_rent_payer() {
     let mut env = Env::new();
     let seller = Keypair::new();
     env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
     let now = env.clock().unix_timestamp;
     let listing = create_fixed_listing(&mut env, &seller, [22u8; 16], now + 30 * 86_400);
     let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
+    let stranger = Keypair::new();
+    env.svm.airdrop(&stranger.pubkey(), 10_000_000_000).unwrap();
+    let rent_payer = env.mint_authority.insecure_clone();
 
-    let close = new_ix(
-        program_id(),
-        adspaces::instruction::CloseSpot {}.data(),
-        adspaces::accounts::CloseSpot {
-            seller: seller.pubkey(),
-            listing,
-            spot,
-            vault,
-            token_program: token_program_id(),
-            seller_ata: empty_token_account(&mut env, &seller, &seller.pubkey()),
-            usdc_mint: env.usdc,
-        }
-        .to_account_metas(None),
-    );
-    send(&mut env.svm, &[close], &seller, &[]).unwrap();
+    // The seller can no longer close spots; nor can anyone but the listing's rent payer.
+    for intruder in [&seller, &stranger] {
+        assert_program_error(
+            close_spot(
+                &mut env,
+                intruder,
+                intruder,
+                &listing,
+                &spot,
+                &vault,
+                &seller_ata,
+            ),
+            adspaces::error::AdspacesError::Unauthorized,
+        );
+    }
+
+    let rent = lamports(&env.svm, &spot) + lamports(&env.svm, &vault);
+    let payer_lamports = lamports(&env.svm, &rent_payer.pubkey());
+    let seller_lamports = lamports(&env.svm, &seller.pubkey());
+    close_spot(
+        &mut env,
+        &stranger,
+        &rent_payer,
+        &listing,
+        &spot,
+        &vault,
+        &seller_ata,
+    )
+    .unwrap();
     assert!(env.svm.get_account(&spot).is_none());
     assert!(env.svm.get_account(&vault).is_none());
+    assert_eq!(
+        lamports(&env.svm, &rent_payer.pubkey()),
+        payer_lamports + rent
+    );
+    assert_eq!(lamports(&env.svm, &seller.pubkey()), seller_lamports);
+    assert_eq!(read_listing(&env.svm, &listing).closed_spot_count, 1);
 }
 
 #[test]
@@ -521,22 +551,22 @@ fn close_funded_spot_fails() {
     let (buyer, buyer_ata) = env.new_user(1_000_000_000);
     claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
 
-    let close = new_ix(
-        program_id(),
-        adspaces::instruction::CloseSpot {}.data(),
-        adspaces::accounts::CloseSpot {
-            seller: seller.pubkey(),
-            listing,
-            spot,
-            vault,
-            token_program: token_program_id(),
-            seller_ata: empty_token_account(&mut env, &seller, &seller.pubkey()),
-            usdc_mint: env.usdc,
-        }
-        .to_account_metas(None),
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
+    let rent_payer = env.mint_authority.insecure_clone();
+    assert_program_error(
+        close_spot(
+            &mut env,
+            &rent_payer,
+            &rent_payer,
+            &listing,
+            &spot,
+            &vault,
+            &seller_ata,
+        ),
+        adspaces::error::AdspacesError::SpotAlreadyFunded,
     );
-    assert!(send(&mut env.svm, &[close], &seller, &[]).is_err());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
+    assert_eq!(read_listing(&env.svm, &listing).closed_spot_count, 0);
 }
 
 #[test]
@@ -551,28 +581,10 @@ fn seller_cancels_funded_spot_with_full_buyer_refund() {
     claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
     let stranger = Keypair::new();
     env.svm.airdrop(&stranger.pubkey(), 10_000_000_000).unwrap();
-    assert!(refund(
-        &mut env,
-        &stranger,
-        &seller.pubkey(),
-        &listing,
-        &spot,
-        &vault,
-        &buyer_ata
-    )
-    .is_err());
+    assert!(refund(&mut env, &stranger, &listing, &spot, &vault, &buyer_ata).is_err());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 
-    let meta = refund(
-        &mut env,
-        &seller,
-        &seller.pubkey(),
-        &listing,
-        &spot,
-        &vault,
-        &buyer_ata,
-    )
-    .unwrap();
+    let meta = refund(&mut env, &seller, &listing, &spot, &vault, &buyer_ata).unwrap();
     assert_event(
         &meta,
         &adspaces::events::SpotRefunded {
@@ -601,38 +613,11 @@ fn anyone_can_refund_missing_proof_after_delivery_deadline() {
     let (caller, wrong_ata) = env.new_user(0);
 
     env.warp_to_timestamp(now + 8 * 86_400 - 1);
-    assert!(refund(
-        &mut env,
-        &caller,
-        &seller.pubkey(),
-        &listing,
-        &spot,
-        &vault,
-        &buyer_ata
-    )
-    .is_err());
+    assert!(refund(&mut env, &caller, &listing, &spot, &vault, &buyer_ata).is_err());
     env.svm.expire_blockhash();
     env.warp_to_timestamp(now + 8 * 86_400);
-    assert!(refund(
-        &mut env,
-        &caller,
-        &seller.pubkey(),
-        &listing,
-        &spot,
-        &vault,
-        &wrong_ata
-    )
-    .is_err());
-    let meta = refund(
-        &mut env,
-        &caller,
-        &seller.pubkey(),
-        &listing,
-        &spot,
-        &vault,
-        &buyer_ata,
-    )
-    .unwrap();
+    assert!(refund(&mut env, &caller, &listing, &spot, &vault, &wrong_ata).is_err());
+    let meta = refund(&mut env, &caller, &listing, &spot, &vault, &buyer_ata).unwrap();
     assert_event(
         &meta,
         &adspaces::events::SpotRefunded {
@@ -664,16 +649,7 @@ fn third_party_cannot_refund_when_proof_exists() {
     env.warp_to_timestamp(now + 8 * 86_400);
     let caller = Keypair::new();
     env.svm.airdrop(&caller.pubkey(), 10_000_000_000).unwrap();
-    assert!(refund(
-        &mut env,
-        &caller,
-        &seller.pubkey(),
-        &listing,
-        &spot,
-        &vault,
-        &buyer_ata
-    )
-    .is_err());
+    assert!(refund(&mut env, &caller, &listing, &spot, &vault, &buyer_ata).is_err());
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
     assert_eq!(
         read_spot(&env.svm, &spot).status,
@@ -837,16 +813,7 @@ fn only_winner_can_dispute_and_block_payout() {
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 
     env.warp_to_timestamp(now + 365 * 86_400);
-    assert!(refund(
-        &mut env,
-        &stranger,
-        &seller.pubkey(),
-        &listing,
-        &spot,
-        &vault,
-        &buyer_ata,
-    )
-    .is_err());
+    assert!(refund(&mut env, &stranger, &listing, &spot, &vault, &buyer_ata,).is_err());
     assert!(withdraw(
         &mut env,
         &seller,
@@ -1159,7 +1126,7 @@ fn proof_uri_must_be_nonempty_and_bounded() {
 }
 
 #[test]
-fn seller_refund_after_proof_closes_proof_and_returns_its_rent() {
+fn seller_refund_after_proof_returns_proof_rent_to_rent_payer() {
     let mut env = Env::new();
     let seller = Keypair::new();
     env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
@@ -1173,11 +1140,27 @@ fn seller_refund_after_proof_closes_proof_and_returns_its_rent() {
     let (proof, _) = proof_pda(&spot);
     assert!(env.svm.get_account(&proof).is_some());
 
-    refund(&mut env, &seller, &seller.pubkey(), &listing, &spot, &vault, &buyer_ata).unwrap();
+    let rent = [spot, vault, proof]
+        .iter()
+        .map(|account| lamports(&env.svm, account))
+        .sum::<u64>();
+    let payer_lamports = lamports(&env.svm, &env.rent_payer());
+    let seller_lamports = lamports(&env.svm, &seller.pubkey());
+    let meta = refund(&mut env, &seller, &listing, &spot, &vault, &buyer_ata).unwrap();
 
     assert_eq!(token_balance(&env.svm, &buyer_ata), PRICE);
     assert!(env.svm.get_account(&spot).is_none());
-    assert!(env.svm.get_account(&proof).is_none(), "proof rent must not be stranded");
+    assert!(
+        env.svm.get_account(&proof).is_none(),
+        "proof rent must not be stranded"
+    );
+    // The seller only paid the transaction fee; all of the rent went to the rent payer.
+    assert_eq!(
+        lamports(&env.svm, &seller.pubkey()),
+        seller_lamports - meta.fee
+    );
+    assert_eq!(lamports(&env.svm, &env.rent_payer()), payer_lamports + rent);
+    assert_eq!(read_listing(&env.svm, &listing).closed_spot_count, 1);
 }
 
 #[test]
@@ -1191,26 +1174,560 @@ fn donated_tokens_cannot_block_closing_an_open_spot() {
 
     // Someone sends 1 base unit straight to the open spot's vault.
     let (donor, donor_ata) = env.new_user(1_000);
-    let transfer = spl_token::instruction::transfer(&token_program_id(), &donor_ata, &vault, &donor.pubkey(), &[], 1).unwrap();
+    let transfer = spl_token::instruction::transfer(
+        &token_program_id(),
+        &donor_ata,
+        &vault,
+        &donor.pubkey(),
+        &[],
+        1,
+    )
+    .unwrap();
     send(&mut env.svm, &[transfer], &donor, &[]).unwrap();
 
+    let rent_payer = env.mint_authority.insecure_clone();
+    // The rent payer closes the spot, but the swept tokens can only go to the seller.
+    assert_program_error(
+        close_spot(
+            &mut env,
+            &rent_payer,
+            &rent_payer,
+            &listing,
+            &spot,
+            &vault,
+            &donor_ata,
+        ),
+        adspaces::error::AdspacesError::Unauthorized,
+    );
     let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
-    let close = new_ix(
+    close_spot(
+        &mut env,
+        &rent_payer,
+        &rent_payer,
+        &listing,
+        &spot,
+        &vault,
+        &seller_ata,
+    )
+    .unwrap();
+    assert_eq!(token_balance(&env.svm, &seller_ata), 1);
+    assert!(env.svm.get_account(&spot).is_none());
+    assert!(env.svm.get_account(&vault).is_none());
+}
+
+// ---- rent payer ---------------------------------------------------------------------------------
+
+fn funded_keypair(env: &mut Env) -> Keypair {
+    let keypair = Keypair::new();
+    env.svm.airdrop(&keypair.pubkey(), 10_000_000_000).unwrap();
+    keypair
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_ix(
+    env: &Env,
+    seller: &Pubkey,
+    listing: &Pubkey,
+    spot: &Pubkey,
+    vault: &Pubkey,
+    seller_ata: &Pubkey,
+    buyer_ata: &Pubkey,
+    treasury_ata: &Pubkey,
+) -> Instruction {
+    let (dispute, _) = dispute_pda(spot);
+    let (proof, _) = proof_pda(spot);
+    new_ix(
         program_id(),
-        adspaces::instruction::CloseSpot {}.data(),
-        adspaces::accounts::CloseSpot {
-            seller: seller.pubkey(),
+        adspaces::instruction::ResolveDispute {
+            seller_share_bps: 5_000,
+            decision_hash: [8; 32],
+            decision_uri: DECISION_URI.to_string(),
+        }
+        .data(),
+        adspaces::accounts::ResolveDispute {
+            resolver: env.mint_authority.pubkey(),
+            config: env.config,
+            listing: *listing,
+            spot: *spot,
+            dispute,
+            rent_payer: env.rent_payer(),
+            vault: *vault,
+            seller_ata: *seller_ata,
+            seller: *seller,
+            buyer_ata: *buyer_ata,
+            treasury_ata: *treasury_ata,
+            proof: env.svm.get_account(&proof).map(|_| proof),
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    )
+}
+
+fn timeout_ix(
+    env: &Env,
+    caller: &Pubkey,
+    listing: &Pubkey,
+    spot: &Pubkey,
+    vault: &Pubkey,
+    buyer_ata: &Pubkey,
+) -> Instruction {
+    let (dispute, _) = dispute_pda(spot);
+    let (proof, _) = proof_pda(spot);
+    new_ix(
+        program_id(),
+        adspaces::instruction::TimeoutDispute {}.data(),
+        adspaces::accounts::TimeoutDispute {
+            caller: *caller,
+            config: env.config,
+            listing: *listing,
+            spot: *spot,
+            dispute,
+            rent_payer: env.rent_payer(),
+            proof: env.svm.get_account(&proof).map(|_| proof),
+            vault: *vault,
+            buyer_ata: *buyer_ata,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    )
+}
+
+/// The same instruction with `impostor` passed as the (non-signing) rent payer account.
+fn with_rent_payer(env: &Env, ix: &Instruction, impostor: &Pubkey) -> Instruction {
+    let mut ix = ix.clone();
+    for account in ix.accounts.iter_mut() {
+        if account.pubkey == env.rent_payer() && !account.is_signer {
+            account.pubkey = *impostor;
+        }
+    }
+    ix
+}
+
+/// Runs a close and checks that all the rent held by `closed` went to the rent payer and that the
+/// seller's SOL balance did not move. `close` must not use the seller or rent payer as fee payer.
+fn assert_rent_returned(
+    env: &mut Env,
+    seller: &Pubkey,
+    closed: &[Pubkey],
+    close: impl FnOnce(&mut Env),
+) {
+    assert!(closed.iter().all(|a| lamports(&env.svm, a) > 0));
+    let rent: u64 = closed.iter().map(|a| lamports(&env.svm, a)).sum();
+    let payer_lamports = lamports(&env.svm, &env.rent_payer());
+    let seller_lamports = lamports(&env.svm, seller);
+    close(env);
+    for account in closed {
+        assert!(env.svm.get_account(account).is_none());
+    }
+    assert_eq!(lamports(&env.svm, &env.rent_payer()), payer_lamports + rent);
+    assert_eq!(lamports(&env.svm, seller), seller_lamports);
+}
+
+#[test]
+fn no_rent_leaks_to_seller() {
+    let mut env = Env::new();
+    let seller = funded_keypair(&mut env);
+    let fee_payer = funded_keypair(&mut env);
+    let rent_payer = env.mint_authority.insecure_clone();
+    let treasury = env.treasury;
+    let seller_ata = empty_token_account(&mut env, &fee_payer, &seller.pubkey());
+    let treasury_ata = empty_token_account(&mut env, &fee_payer, &treasury);
+    // Minting test USDC is the one place the rent payer pays a fee, so do it before measuring.
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    let now = env.clock().unix_timestamp;
+
+    // The rent payer only co-signs (never pays fees), so its balance moves by rent alone.
+    let payer_start = lamports(&env.svm, &rent_payer.pubkey());
+    let listing = create_fixed_listing(&mut env, &seller, [50; 16], now + 86_400);
+    let (sold, sold_vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (unsold, unsold_vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let rent: u64 = [listing, sold, sold_vault, unsold, unsold_vault]
+        .iter()
+        .map(|a| lamports(&env.svm, a))
+        .sum();
+    assert_eq!(lamports(&env.svm, &rent_payer.pubkey()), payer_start - rent);
+
+    claim(&mut env, &buyer, &buyer_ata, &listing, &sold, &sold_vault);
+    env.warp_to_timestamp(now + 86_400);
+    let before_proof = lamports(&env.svm, &rent_payer.pubkey());
+    submit_proof(&mut env, &seller, &listing, &sold);
+    let (proof, _) = proof_pda(&sold);
+    assert_eq!(
+        lamports(&env.svm, &rent_payer.pubkey()),
+        before_proof - lamports(&env.svm, &proof)
+    );
+
+    env.warp_to_timestamp(now + 8 * 86_400 + adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS);
+    // The payout can't send the rent anywhere but the listing's rent payer.
+    let impostor_payout = new_ix(
+        program_id(),
+        adspaces::instruction::WithdrawSeller {}.data(),
+        adspaces::accounts::WithdrawSeller {
+            caller: fee_payer.pubkey(),
             listing,
-            spot,
-            vault,
+            seller: seller.pubkey(),
+            rent_payer: seller.pubkey(),
+            spot: sold,
+            vault: sold_vault,
             seller_ata,
+            treasury_ata,
+            proof,
             usdc_mint: env.usdc,
             token_program: token_program_id(),
         }
         .to_account_metas(None),
     );
-    send(&mut env.svm, &[close], &seller, &[]).unwrap();
-    assert_eq!(token_balance(&env.svm, &seller_ata), 1);
+    assert_program_error(
+        send(&mut env.svm, &[impostor_payout], &fee_payer, &[]),
+        adspaces::error::AdspacesError::Unauthorized,
+    );
+    assert_rent_returned(
+        &mut env,
+        &seller.pubkey(),
+        &[sold, sold_vault, proof],
+        |env| {
+            withdraw(
+                env,
+                &fee_payer,
+                &seller.pubkey(),
+                &listing,
+                &sold,
+                &sold_vault,
+                &seller_ata,
+                &treasury_ata,
+            )
+            .unwrap();
+        },
+    );
+    assert_eq!(read_listing(&env.svm, &listing).closed_spot_count, 1);
+
+    assert_rent_returned(&mut env, &seller.pubkey(), &[unsold, unsold_vault], |env| {
+        close_spot(
+            env,
+            &fee_payer,
+            &rent_payer,
+            &listing,
+            &unsold,
+            &unsold_vault,
+            &seller_ata,
+        )
+        .unwrap();
+    });
+    assert_eq!(read_listing(&env.svm, &listing).closed_spot_count, 2);
+
+    assert_rent_returned(&mut env, &seller.pubkey(), &[listing], |env| {
+        close_listing(env, &fee_payer, &rent_payer, &listing).unwrap();
+    });
+    // Everything the rent payer put in came back, to the lamport.
+    assert_eq!(lamports(&env.svm, &rent_payer.pubkey()), payer_start);
+    assert_eq!(
+        token_balance(&env.svm, &seller_ata),
+        PRICE - (PRICE as u128 * FEE_BPS / 10_000) as u64
+    );
+}
+
+#[test]
+fn every_close_path_returns_rent_and_counts_toward_close_listing() {
+    use adspaces::error::AdspacesError;
+
+    let mut env = Env::new();
+    let seller = funded_keypair(&mut env);
+    let fee_payer = funded_keypair(&mut env);
+    let rent_payer = env.mint_authority.insecure_clone();
+    let treasury = env.treasury;
+    let seller_ata = empty_token_account(&mut env, &fee_payer, &seller.pubkey());
+    let treasury_ata = empty_token_account(&mut env, &fee_payer, &treasury);
+    let now = env.clock().unix_timestamp;
+    let deadline = now + 86_400;
+    let delivery = deadline + 7 * 86_400;
+    // Minting test USDC is the one place the rent payer pays a fee, so do it before measuring.
+    let (buyer, buyer_ata) = env.new_user(4 * PRICE);
+
+    let payer_start = lamports(&env.svm, &rent_payer.pubkey());
+    let listing = create_fixed_listing(&mut env, &seller, [51; 16], deadline);
+    let spots: Vec<(Pubkey, Pubkey)> = (0..5)
+        .map(|_| add_spot_to(&mut env, &seller, &listing, PRICE))
+        .collect();
+    for (spot, vault) in &spots[1..] {
+        claim(&mut env, &buyer, &buyer_ata, &listing, spot, vault);
+    }
+    let closed_count = |env: &Env| read_listing(&env.svm, &listing).closed_spot_count;
+    let listing_blocked = |env: &mut Env| {
+        assert_program_error(
+            close_listing(env, &fee_payer, &rent_payer, &listing),
+            AdspacesError::ListingHasActiveSpots,
+        );
+    };
+    listing_blocked(&mut env);
+    assert_eq!(closed_count(&env), 0);
+
+    // 1. close_spot: the unsold spot, before the deadline.
+    let (open, open_vault) = spots[0];
+    assert_rent_returned(&mut env, &seller.pubkey(), &[open, open_vault], |env| {
+        close_spot(
+            env,
+            &fee_payer,
+            &rent_payer,
+            &listing,
+            &open,
+            &open_vault,
+            &seller_ata,
+        )
+        .unwrap();
+    });
+    assert_eq!(closed_count(&env), 1);
+    listing_blocked(&mut env);
+
+    env.warp_to_timestamp(deadline);
+    let (paid, paid_vault) = spots[1];
+    let (resolved, resolved_vault) = spots[3];
+    submit_proof(&mut env, &seller, &listing, &paid);
+    submit_proof(&mut env, &seller, &listing, &resolved);
+
+    // 2. refund_spot: a third party refunds a spot with no proof once delivery is due.
+    env.warp_to_timestamp(delivery);
+    let (refunded, refunded_vault) = spots[2];
+    let refund_ix = new_ix(
+        program_id(),
+        adspaces::instruction::RefundSpot {}.data(),
+        adspaces::accounts::RefundSpot {
+            caller: fee_payer.pubkey(),
+            listing,
+            rent_payer: env.rent_payer(),
+            spot: refunded,
+            vault: refunded_vault,
+            buyer_ata,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+            proof: None,
+        }
+        .to_account_metas(None),
+    );
+    let misdirected = with_rent_payer(&env, &refund_ix, &seller.pubkey());
+    assert_program_error(
+        send(&mut env.svm, &[misdirected], &fee_payer, &[]),
+        AdspacesError::Unauthorized,
+    );
+    assert_rent_returned(
+        &mut env,
+        &seller.pubkey(),
+        &[refunded, refunded_vault],
+        |env| {
+            send(&mut env.svm, &[refund_ix], &fee_payer, &[]).unwrap();
+        },
+    );
+    assert_eq!(closed_count(&env), 2);
+    listing_blocked(&mut env);
+
+    // 3. resolve_dispute: a disputed spot with proof, split by the resolver.
+    dispute(&mut env, &buyer, &listing, &resolved).unwrap();
+    let (timed_out, timed_out_vault) = spots[4];
+    dispute(&mut env, &buyer, &listing, &timed_out).unwrap();
+    let opened_at = env.clock().unix_timestamp;
+    let resolve = resolve_ix(
+        &env,
+        &seller.pubkey(),
+        &listing,
+        &resolved,
+        &resolved_vault,
+        &seller_ata,
+        &buyer_ata,
+        &treasury_ata,
+    );
+    let misdirected = with_rent_payer(&env, &resolve, &seller.pubkey());
+    assert_program_error(
+        send(
+            &mut env.svm,
+            &[misdirected],
+            &fee_payer,
+            &[&env.mint_authority],
+        ),
+        AdspacesError::Unauthorized,
+    );
+    let resolved_closed = [
+        resolved,
+        resolved_vault,
+        proof_pda(&resolved).0,
+        dispute_pda(&resolved).0,
+    ];
+    assert_rent_returned(&mut env, &seller.pubkey(), &resolved_closed, |env| {
+        send(&mut env.svm, &[resolve], &fee_payer, &[&env.mint_authority]).unwrap();
+    });
+    assert_eq!(closed_count(&env), 3);
+    listing_blocked(&mut env);
+
+    // 4. withdraw_seller: the payout after the review window.
+    env.warp_to_timestamp(delivery + adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS);
+    let paid_closed = [paid, paid_vault, proof_pda(&paid).0];
+    assert_rent_returned(&mut env, &seller.pubkey(), &paid_closed, |env| {
+        withdraw(
+            env,
+            &fee_payer,
+            &seller.pubkey(),
+            &listing,
+            &paid,
+            &paid_vault,
+            &seller_ata,
+            &treasury_ata,
+        )
+        .unwrap();
+    });
+    assert_eq!(closed_count(&env), 4);
+    listing_blocked(&mut env);
+
+    // 5. timeout_dispute: the unresolved dispute (no proof) times out.
+    env.warp_to_timestamp(opened_at + adspaces::constants::DEFAULT_DISPUTE_TIMEOUT_SECONDS);
+    let timeout = timeout_ix(
+        &env,
+        &fee_payer.pubkey(),
+        &listing,
+        &timed_out,
+        &timed_out_vault,
+        &buyer_ata,
+    );
+    let misdirected = with_rent_payer(&env, &timeout, &seller.pubkey());
+    assert_program_error(
+        send(&mut env.svm, &[misdirected], &fee_payer, &[]),
+        AdspacesError::Unauthorized,
+    );
+    let timed_out_closed = [timed_out, timed_out_vault, dispute_pda(&timed_out).0];
+    assert_rent_returned(&mut env, &seller.pubkey(), &timed_out_closed, |env| {
+        send(&mut env.svm, &[timeout], &fee_payer, &[]).unwrap();
+    });
+    assert_eq!(closed_count(&env), 5);
+
+    // Every spot is closed: the listing closes and the rent payer is made whole.
+    assert_rent_returned(&mut env, &seller.pubkey(), &[listing], |env| {
+        close_listing(env, &fee_payer, &rent_payer, &listing).unwrap();
+    });
+    assert_eq!(lamports(&env.svm, &rent_payer.pubkey()), payer_start);
+}
+
+#[test]
+fn instructions_reject_a_rent_payer_other_than_the_listings() {
+    use adspaces::error::AdspacesError;
+
+    let mut env = Env::new();
+    let seller = funded_keypair(&mut env);
+    let impostor = funded_keypair(&mut env);
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [52; 16], now + 86_400);
+    assert_eq!(
+        read_listing(&env.svm, &listing).rent_payer,
+        env.rent_payer()
+    );
+
+    // add_spot
+    let (spot, _) = spot_pda(&listing, 0);
+    let (vault, _) = vault_pda(&spot);
+    let add = new_ix(
+        program_id(),
+        adspaces::instruction::AddSpot { price: PRICE }.data(),
+        adspaces::accounts::AddSpot {
+            seller: seller.pubkey(),
+            rent_payer: impostor.pubkey(),
+            listing,
+            spot,
+            vault,
+            config: env.config,
+            usdc_mint: env.usdc,
+            system_program: system_program::ID,
+            token_program: token_program_id(),
+            rent: rent::ID,
+            reviewer: env.mint_authority.pubkey(),
+            review_authority: env.review_authority,
+        }
+        .to_account_metas(None),
+    );
+    assert_program_error(
+        send(
+            &mut env.svm,
+            &[add],
+            &seller,
+            &[&impostor, &env.mint_authority],
+        ),
+        AdspacesError::Unauthorized,
+    );
     assert!(env.svm.get_account(&spot).is_none());
-    assert!(env.svm.get_account(&vault).is_none());
+
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (open, open_vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+
+    // submit_proof
+    env.warp_to_timestamp(now + 86_400);
+    let (proof, _) = proof_pda(&spot);
+    let submit = new_ix(
+        program_id(),
+        adspaces::instruction::SubmitProof {
+            proof_hash: [7; 32],
+            proof_uri: PROOF_URI.to_string(),
+        }
+        .data(),
+        adspaces::accounts::SubmitProof {
+            seller: seller.pubkey(),
+            rent_payer: impostor.pubkey(),
+            listing,
+            spot,
+            proof,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    assert_program_error(
+        send(&mut env.svm, &[submit], &seller, &[&impostor]),
+        AdspacesError::Unauthorized,
+    );
+    assert!(env.svm.get_account(&proof).is_none());
+
+    // raise_dispute
+    env.warp_to_timestamp(now + 8 * 86_400);
+    let (dispute, _) = dispute_pda(&spot);
+    let raise = new_ix(
+        program_id(),
+        adspaces::instruction::RaiseDispute {
+            evidence_hash: [9; 32],
+            evidence_uri: DISPUTE_URI.to_string(),
+        }
+        .data(),
+        adspaces::accounts::RaiseDispute {
+            buyer: buyer.pubkey(),
+            config: env.config,
+            listing,
+            spot,
+            rent_payer: impostor.pubkey(),
+            dispute,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    assert_program_error(
+        send(&mut env.svm, &[raise], &buyer, &[&impostor]),
+        AdspacesError::Unauthorized,
+    );
+    assert!(env.svm.get_account(&dispute).is_none());
+
+    // close_spot and close_listing
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
+    assert_program_error(
+        close_spot(
+            &mut env,
+            &impostor,
+            &impostor,
+            &listing,
+            &open,
+            &open_vault,
+            &seller_ata,
+        ),
+        AdspacesError::Unauthorized,
+    );
+    assert!(env.svm.get_account(&open).is_some());
+    assert_program_error(
+        close_listing(&mut env, &impostor, &impostor, &listing),
+        AdspacesError::Unauthorized,
+    );
+    assert!(env.svm.get_account(&listing).is_some());
 }

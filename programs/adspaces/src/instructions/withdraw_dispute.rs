@@ -35,7 +35,11 @@ pub struct WithdrawDispute<'info> {
     )]
     pub dispute: Account<'info, DisputeRecord>,
     /// Gets the dispute's rent back: the platform account that paid it.
-    #[account(mut, address = dispute.rent_payer @ AdspacesError::Unauthorized)]
+    #[account(
+        mut,
+        address = dispute.rent_payer @ AdspacesError::Unauthorized,
+        constraint = rent_payer.key() == listing.rent_payer @ AdspacesError::Unauthorized,
+    )]
     pub rent_payer: SystemAccount<'info>,
 }
 
@@ -45,7 +49,10 @@ pub fn handle_withdraw_dispute(ctx: Context<WithdrawDispute>) -> Result<()> {
     } else {
         ctx.accounts.spot.current_bidder
     };
-    require!(winner == ctx.accounts.buyer.key(), AdspacesError::NotWinningBuyer);
+    require!(
+        winner == ctx.accounts.buyer.key(),
+        AdspacesError::NotWinningBuyer
+    );
     ctx.accounts.spot.status = SPOT_FUNDED;
     emit!(DisputeWithdrawn {
         listing: ctx.accounts.listing.key(),

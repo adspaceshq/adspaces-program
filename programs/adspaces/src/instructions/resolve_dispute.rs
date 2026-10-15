@@ -6,6 +6,7 @@ use crate::{
     error::AdspacesError,
     events::DisputeResolved,
     fees::calculate_dispute_fee,
+    rent::record_spot_closed,
     state::{Config, DisputeRecord, Listing, ProofRecord, Spot},
 };
 
@@ -19,6 +20,7 @@ pub struct ResolveDispute<'info> {
     )]
     pub config: Account<'info, Config>,
     #[account(
+        mut,
         seeds = [LISTING_SEED, listing.seller.as_ref(), listing.slug_hash.as_ref()],
         bump = listing.bump,
     )]
@@ -38,8 +40,12 @@ pub struct ResolveDispute<'info> {
         constraint = dispute.spot == spot.key() @ AdspacesError::Unauthorized,
     )]
     pub dispute: Box<Account<'info, DisputeRecord>>,
-    /// Gets the dispute account's rent back: the platform account that paid it.
-    #[account(mut, address = dispute.rent_payer @ AdspacesError::Unauthorized)]
+    /// Gets the rent back for the dispute, spot, vault and proof: the platform account that paid it.
+    #[account(
+        mut,
+        address = dispute.rent_payer @ AdspacesError::Unauthorized,
+        constraint = rent_payer.key() == listing.rent_payer @ AdspacesError::Unauthorized,
+    )]
     pub rent_payer: SystemAccount<'info>,
     #[account(
         mut,
@@ -50,7 +56,7 @@ pub struct ResolveDispute<'info> {
     pub vault: Box<Account<'info, TokenAccount>>,
     #[account(mut, token::mint = usdc_mint, token::authority = seller)]
     pub seller_ata: Box<Account<'info, TokenAccount>>,
-    #[account(mut, address = listing.seller @ AdspacesError::Unauthorized)]
+    #[account(address = listing.seller @ AdspacesError::Unauthorized)]
     pub seller: SystemAccount<'info>,
     #[account(
         mut,
@@ -133,7 +139,7 @@ pub fn handle_resolve_dispute(
         ctx.accounts.token_program.key(),
         token::CloseAccount {
             account: ctx.accounts.vault.to_account_info(),
-            destination: ctx.accounts.seller.to_account_info(),
+            destination: ctx.accounts.rent_payer.to_account_info(),
             authority: ctx.accounts.spot.to_account_info(),
         },
         signer_seeds,
@@ -162,10 +168,15 @@ pub fn handle_resolve_dispute(
     });
 
     if let Some(ref proof) = ctx.accounts.proof {
-        proof.close(ctx.accounts.seller.to_account_info())?;
+        proof.close(ctx.accounts.rent_payer.to_account_info())?;
     }
-    ctx.accounts.dispute.close(ctx.accounts.rent_payer.to_account_info())?;
-    ctx.accounts.spot.close(ctx.accounts.seller.to_account_info())?;
+    ctx.accounts
+        .dispute
+        .close(ctx.accounts.rent_payer.to_account_info())?;
+    ctx.accounts
+        .spot
+        .close(ctx.accounts.rent_payer.to_account_info())?;
+    record_spot_closed(&mut ctx.accounts.listing)?;
 
     Ok(())
 }

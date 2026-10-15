@@ -11,11 +11,12 @@
     "smoke:dispute:devnet": "node scripts/smoke-dispute-devnet.js --confirm",
     "smoke:payout:start:devnet": "node scripts/smoke-payout-devnet.js start --confirm",
     "smoke:payout:finish:devnet": "node scripts/smoke-payout-devnet.js finish --confirm",
-    "test:anchor": "tsc --outDir .anchor/ts-tests --rootDir . && mocha -t 1000000 \".anchor/ts-tests/tests/**/*.js\""
+    "test:anchor": "rm -rf .anchor/ts-tests && tsc --noEmitOnError --outDir .anchor/ts-tests --rootDir . && mocha -t 1000000 \".anchor/ts-tests/tests/**/*.js\""
   },
   "devDependencies": {
     "@coral-xyz/anchor": "^0.32.1",
     "@solana/spl-token": "^0.4.14",
+    "@sqds/multisig": "2.1.4",
     "@types/chai": "^4.3.20",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.19.0",

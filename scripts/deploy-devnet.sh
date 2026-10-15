@@ -8,7 +8,7 @@ readonly program_id="8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5"
 readonly devnet_url="https://api.devnet.solana.com"
 readonly script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly repo_root="$(cd "$script_dir/.." && pwd)"
-readonly wallet="${ADSPACES_DEPLOY_WALLET:-$HOME/.config/solana/id.json}"
+readonly wallet="${ADSPACES_DEPLOY_WALLET:-$HOME/.config/solana/adspaces-devnet.json}"
 readonly program_keypair="${ADSPACES_PROGRAM_KEYPAIR:-$HOME/.config/solana/programs/adspaces-devnet-v3-program.json}"
 readonly program_binary="$repo_root/target/deploy/adspaces.so"
 

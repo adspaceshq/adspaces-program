@@ -61,11 +61,13 @@ mod tests {
             min_increment: 0,
             double_up: false,
             spot_count: 0,
+            closed_spot_count: 0,
             status: 0,
             treasury: Pubkey::default(),
             fee_bps,
             uplift_fee_bps,
             max_fee_bps,
+            rent_payer: Pubkey::default(),
             bump: 0,
         }
     }
@@ -138,10 +140,18 @@ mod tests {
         for _ in 0..200_000 {
             let policy = random_policy(&mut rng);
             // Prices and balances from dust up to ~18 trillion USDC base units (u64 range edge included).
-            let range = if rng.below(10) == 0 { u64::MAX / 2 } else { 10_000_000_000 };
+            let range = if rng.below(10) == 0 {
+                u64::MAX / 2
+            } else {
+                10_000_000_000
+            };
             let price = 1 + rng.below(range);
             let uplift = rng.below(10_000_000_000);
-            let balance = if policy.mode == MODE_FIXED { price } else { price.saturating_add(uplift) };
+            let balance = if policy.mode == MODE_FIXED {
+                price
+            } else {
+                price.saturating_add(uplift)
+            };
             let spot = spot(price);
 
             let fee = calculate_fee(&policy, &spot, balance).unwrap();
@@ -154,9 +164,15 @@ mod tests {
             let seller_gross = ((balance as u128) * (share as u128) / 10_000) as u64;
             let buyer_refund = balance - seller_gross;
             let dispute_fee = calculate_dispute_fee(&policy, &spot, balance, share).unwrap();
-            assert!(dispute_fee <= seller_gross, "dispute fee {dispute_fee} > seller gross {seller_gross}");
+            assert!(
+                dispute_fee <= seller_gross,
+                "dispute fee {dispute_fee} > seller gross {seller_gross}"
+            );
             let seller_net = seller_gross - dispute_fee;
-            assert_eq!(buyer_refund as u128 + seller_net as u128 + dispute_fee as u128, balance as u128);
+            assert_eq!(
+                buyer_refund as u128 + seller_net as u128 + dispute_fee as u128,
+                balance as u128
+            );
         }
     }
 
@@ -168,9 +184,15 @@ mod tests {
         // Largest possible balance does not overflow.
         assert!(calculate_fee(&auction, &spot(1), u64::MAX).is_ok());
         // Full share to the buyer charges no fee.
-        assert_eq!(calculate_dispute_fee(&auction, &spot(100), 1_000_000, 0).unwrap(), 0);
+        assert_eq!(
+            calculate_dispute_fee(&auction, &spot(100), 1_000_000, 0).unwrap(),
+            0
+        );
         // 100% fee policy on a fixed listing takes everything and no more.
-        assert_eq!(calculate_fee(&listing(MODE_FIXED, 10_000, 0, 10_000), &spot(5), 5).unwrap(), 5);
+        assert_eq!(
+            calculate_fee(&listing(MODE_FIXED, 10_000, 0, 10_000), &spot(5), 5).unwrap(),
+            5
+        );
     }
 
     #[test]

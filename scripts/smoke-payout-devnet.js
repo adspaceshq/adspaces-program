@@ -54,7 +54,10 @@ function client() {
   const provider = new anchor.AnchorProvider(connection, new anchor.Wallet(seller), {
     commitment: "confirmed",
   });
-  const idlPath = path.join(__dirname, "..", "target", "idl", "adspaces.json");
+  // ADSPACES_IDL points at another IDL, e.g. the pre-rent_payer one to finish a payout that was staged
+  // on the program before the upgrade.
+  const idlPath =
+    process.env.ADSPACES_IDL || path.join(__dirname, "..", "target", "idl", "adspaces.json");
   const program = new anchor.Program(JSON.parse(fs.readFileSync(idlPath, "utf8")), provider);
   return { buyer, connection, program, seller };
 }
@@ -88,8 +91,12 @@ async function start() {
   const fundedSpots = await program.account.spot.all();
   for (const candidate of fundedSpots) {
     if (candidate.account.status !== 1 || !candidate.account.buyer.equals(buyer.publicKey)) continue;
-    const candidateListing = await program.account.listing.fetch(candidate.account.listing);
-    if (!candidateListing.seller.equals(seller.publicKey)) continue;
+    // Listings in the layout before rent_payer no longer decode; skip them.
+    const candidateListing = await program.account.listing
+      .fetch(candidate.account.listing)
+      .catch(() => null);
+    if (!candidateListing || !candidateListing.seller.equals(seller.publicKey)) continue;
+    if (!candidateListing.rentPayer.equals(seller.publicKey)) continue;
     const currentTime = await validatorTime(connection);
     if (candidate.account.proofSubmittedAt.toNumber() === 0) {
       if (currentTime >= candidateListing.deliveryDeadline.toNumber()) {
@@ -98,7 +105,7 @@ async function start() {
           .accountsStrict({
             caller: seller.publicKey,
             listing: candidate.account.listing,
-            seller: seller.publicKey,
+            rentPayer: candidateListing.rentPayer,
             spot: candidate.publicKey,
             vault: candidate.account.vault,
             buyerAta,
@@ -119,6 +126,7 @@ async function start() {
         .submitProof(Array(32).fill(7), "https://adspaces.fun/devnet-payout-proof")
         .accountsStrict({
           seller: seller.publicKey,
+          rentPayer: seller.publicKey,
           listing: candidate.account.listing,
           spot: candidate.publicKey,
           proof: candidateProof,
@@ -192,6 +200,7 @@ async function start() {
     .accountsStrict({
       seller: seller.publicKey,
       reviewer: seller.publicKey,
+      rentPayer: seller.publicKey,
       listing,
       config,
       reviewAuthority,
@@ -203,6 +212,7 @@ async function start() {
     .addSpot(new anchor.BN(PRICE.toString()))
     .accountsStrict({
       seller: seller.publicKey,
+      rentPayer: seller.publicKey,
       config,
       listing,
       spot,
@@ -235,6 +245,7 @@ async function start() {
     .submitProof(Array(32).fill(7), "https://adspaces.fun/devnet-payout-proof")
     .accountsStrict({
       seller: seller.publicKey,
+      rentPayer: seller.publicKey,
       listing,
       spot,
       proof,
@@ -271,14 +282,26 @@ async function finish() {
 
   const sellerAta = new anchor.web3.PublicKey(state.sellerAta);
   const treasuryAta = new anchor.web3.PublicKey(state.treasuryAccount);
+  const listing = new anchor.web3.PublicKey(state.listing);
+  // The account list follows the loaded IDL, which must match the deployed program. A payout staged
+  // before the rent_payer upgrade can only be finished before that upgrade, with the old IDL
+  // (ADSPACES_IDL): the upgraded program cannot read a listing in the old layout. With the new IDL the
+  // listing's rent payer gets the spot, vault and proof rent back.
+  const withdrawAccounts = program.idl.instructions.find(
+    (instruction) => instruction.name === "withdraw_seller",
+  ).accounts;
+  const rentAccounts = withdrawAccounts.some((account) => account.name === "rent_payer")
+    ? { rentPayer: (await program.account.listing.fetch(listing)).rentPayer }
+    : {};
   const sellerBefore = (await getAccount(connection, sellerAta)).amount;
   const treasuryBefore = (await getAccount(connection, treasuryAta)).amount;
   const signature = await program.methods
     .withdrawSeller()
     .accountsStrict({
       caller: seller.publicKey,
-      listing: new anchor.web3.PublicKey(state.listing),
+      listing,
       seller: seller.publicKey,
+      ...rentAccounts,
       spot: new anchor.web3.PublicKey(state.spot),
       proof: new anchor.web3.PublicKey(state.proof),
       vault: new anchor.web3.PublicKey(state.vault),

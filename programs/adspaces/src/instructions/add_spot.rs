@@ -10,8 +10,9 @@ use crate::{
 
 #[derive(Accounts)]
 pub struct AddSpot<'info> {
-    #[account(mut)]
     pub seller: Signer<'info>,
+    #[account(mut, address = listing.rent_payer @ AdspacesError::Unauthorized)]
+    pub rent_payer: Signer<'info>,
     #[account(
         mut,
         seeds = [LISTING_SEED, seller.key().as_ref(), listing.slug_hash.as_ref()],
@@ -31,7 +32,7 @@ pub struct AddSpot<'info> {
     pub review_authority: Account<'info, ReviewAuthority>,
     #[account(
         init,
-        payer = seller,
+        payer = rent_payer,
         space = 8 + Spot::INIT_SPACE,
         seeds = [SPOT_SEED, listing.key().as_ref(), &[listing.spot_count]],
         bump
@@ -39,7 +40,7 @@ pub struct AddSpot<'info> {
     pub spot: Account<'info, Spot>,
     #[account(
         init,
-        payer = seller,
+        payer = rent_payer,
         seeds = [VAULT_SEED, spot.key().as_ref()],
         bump,
         token::mint = usdc_mint,

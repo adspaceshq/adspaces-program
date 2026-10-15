@@ -11,12 +11,14 @@ use crate::{
 #[derive(Accounts)]
 #[instruction(slug_hash: [u8; 16])]
 pub struct CreateListing<'info> {
-    #[account(mut)]
     pub seller: Signer<'info>,
     pub reviewer: Signer<'info>,
+    /// Platform account that pays the rent for the listing and everything under it, and gets it back.
+    #[account(mut)]
+    pub rent_payer: Signer<'info>,
     #[account(
         init,
-        payer = seller,
+        payer = rent_payer,
         space = 8 + Listing::INIT_SPACE,
         seeds = [LISTING_SEED, seller.key().as_ref(), slug_hash.as_ref()],
         bump
@@ -84,7 +86,10 @@ pub fn handle_create_listing(
 
     if mode == MODE_AUCTION && !double_up {
         // Floor of 0.01 USDC: a 1-unit step lets two accounts keep an auction alive with dust bids.
-        require!(min_increment >= MIN_BID_INCREMENT, AdspacesError::InvalidMinIncrement);
+        require!(
+            min_increment >= MIN_BID_INCREMENT,
+            AdspacesError::InvalidMinIncrement
+        );
     }
     validate_fee_policy(
         mode,
@@ -107,11 +112,13 @@ pub fn handle_create_listing(
     listing.min_increment = min_increment;
     listing.double_up = double_up;
     listing.spot_count = 0;
+    listing.closed_spot_count = 0;
     listing.status = LISTING_OPEN;
     listing.treasury = ctx.accounts.config.treasury;
     listing.fee_bps = fee_bps;
     listing.uplift_fee_bps = uplift_fee_bps;
     listing.max_fee_bps = max_fee_bps;
+    listing.rent_payer = ctx.accounts.rent_payer.key();
     listing.bump = ctx.bumps.listing;
 
     emit!(ListingCreated {

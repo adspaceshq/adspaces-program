@@ -123,8 +123,8 @@ describe("dispute lifecycle", () => {
     );
 
     const now = await validatorTime();
-    const auctionEnd = now + 2;
-    const deliveryEnd = now + 4;
+    const auctionEnd = now + 8;
+    const deliveryEnd = now + 14;
     await program.methods
       .createListing(
         slugHash,
@@ -143,6 +143,7 @@ describe("dispute lifecycle", () => {
       .accountsStrict({
         seller: wallet.publicKey,
         reviewer: wallet.publicKey,
+        rentPayer: wallet.publicKey,
         listing,
         config,
         reviewAuthority,
@@ -154,6 +155,9 @@ describe("dispute lifecycle", () => {
       .addSpot(new anchor.BN(Number(price)))
       .accountsStrict({
         seller: wallet.publicKey,
+        rentPayer: wallet.publicKey,
+        reviewer: wallet.publicKey,
+        reviewAuthority,
         config,
         listing,
         spot,
@@ -185,6 +189,7 @@ describe("dispute lifecycle", () => {
       .submitProof(Array(32).fill(1), "ipfs://adspaces-validator-proof")
       .accountsStrict({
         seller: wallet.publicKey,
+        rentPayer: wallet.publicKey,
         listing,
         spot,
         proof,
@@ -200,8 +205,10 @@ describe("dispute lifecycle", () => {
         .raiseDispute(hash, uri)
         .accountsStrict({
           buyer: buyer.publicKey,
+          config,
           listing,
           spot,
+          rentPayer: wallet.publicKey,
           dispute,
           systemProgram: anchor.web3.SystemProgram.programId,
         })
@@ -230,6 +237,7 @@ describe("dispute lifecycle", () => {
         .resolveDispute(5_000, hash, uri)
         .accountsStrict({
           resolver: wallet.publicKey,
+          rentPayer: wallet.publicKey,
           config,
           listing,
           spot,
@@ -335,14 +343,14 @@ describe("dispute lifecycle", () => {
     ).address;
 
     const now = await validatorTime();
-    const deliveryEnd = now + 4;
+    const deliveryEnd = now + 12;
     await program.methods
       .createListing(
         auctionSlug,
         "ipfs://adspaces-validator-auction-dispute",
         1,
-        new anchor.BN(now + 2),
-        new anchor.BN(now + 2),
+        new anchor.BN(now + 8),
+        new anchor.BN(now + 8),
         new anchor.BN(deliveryEnd),
         new anchor.BN(48 * 60 * 60),
         new anchor.BN(10_000_000),
@@ -354,6 +362,7 @@ describe("dispute lifecycle", () => {
       .accountsStrict({
         seller: wallet.publicKey,
         reviewer: wallet.publicKey,
+        rentPayer: wallet.publicKey,
         listing: auctionListing,
         config,
         reviewAuthority,
@@ -365,6 +374,9 @@ describe("dispute lifecycle", () => {
       .addSpot(new anchor.BN(100_000_000))
       .accountsStrict({
         seller: wallet.publicKey,
+        rentPayer: wallet.publicKey,
+        reviewer: wallet.publicKey,
+        reviewAuthority,
         config,
         listing: auctionListing,
         spot: auctionSpot,
@@ -415,8 +427,10 @@ describe("dispute lifecycle", () => {
         .raiseDispute(Array(32).fill(0), "")
         .accountsStrict({
           buyer: alice.publicKey,
+          config,
           listing: auctionListing,
           spot: auctionSpot,
+          rentPayer: wallet.publicKey,
           dispute: auctionDispute,
           systemProgram: anchor.web3.SystemProgram.programId,
         })
@@ -430,8 +444,10 @@ describe("dispute lifecycle", () => {
       .raiseDispute(Array(32).fill(0), "")
       .accountsStrict({
         buyer: bob.publicKey,
+        config,
         listing: auctionListing,
         spot: auctionSpot,
+        rentPayer: wallet.publicKey,
         dispute: auctionDispute,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
@@ -448,6 +464,7 @@ describe("dispute lifecycle", () => {
       .resolveDispute(0, Array(32).fill(4), "ipfs://adspaces-validator-auction-refund")
       .accountsStrict({
         resolver: wallet.publicKey,
+        rentPayer: wallet.publicKey,
         config,
         listing: auctionListing,
         spot: auctionSpot,

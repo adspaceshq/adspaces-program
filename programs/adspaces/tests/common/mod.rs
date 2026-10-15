@@ -263,13 +263,20 @@ impl Env {
         clock.unix_timestamp = timestamp;
         self.set_clock(&clock);
     }
+
+    /// The platform account that pays (and gets back) listing rent. In tests this is the reviewer,
+    /// which already co-signs every listing and spot.
+    pub fn rent_payer(&self) -> Pubkey {
+        self.mint_authority.pubkey()
+    }
 }
 
 pub fn new_ix(program_id: Pubkey, data: Vec<u8>, accounts: Vec<AccountMeta>) -> Instruction {
     Instruction::new_with_bytes(program_id, &data, accounts)
 }
 
-/// Builds, signs and sends one transaction with the latest blockhash.
+/// Builds, signs and sends one transaction with the latest blockhash. An extra signer that is
+/// already the payer (or listed twice) signs once, so callers can pass roles without deduplicating.
 #[allow(clippy::result_large_err)]
 pub fn send(
     svm: &mut LiteSVM,
@@ -280,7 +287,11 @@ pub fn send(
     let blockhash = svm.latest_blockhash();
     let msg = Message::new_with_blockhash(ixs, Some(&payer.pubkey()), &blockhash);
     let mut signers = vec![payer];
-    signers.extend(extra_signers.iter());
+    for signer in extra_signers {
+        if !signers.iter().any(|s| s.pubkey() == signer.pubkey()) {
+            signers.push(signer);
+        }
+    }
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &signers).unwrap();
     svm.send_transaction(tx)
 }
@@ -336,4 +347,74 @@ pub fn read_authority_transfer(
 pub fn token_balance(svm: &LiteSVM, account: &Pubkey) -> u64 {
     let raw = svm.get_account(account).unwrap();
     state::Account::unpack(&raw.data).unwrap().amount
+}
+
+/// SOL balance of an account; 0 once it is closed.
+pub fn lamports(svm: &LiteSVM, account: &Pubkey) -> u64 {
+    svm.get_account(account).map(|a| a.lamports).unwrap_or(0)
+}
+
+/// The single-instruction transaction failed with exactly this program error.
+pub fn assert_program_error(
+    result: litesvm::types::TransactionResult,
+    error: adspaces::error::AdspacesError,
+) {
+    let code = anchor_lang::error::ERROR_CODE_OFFSET + error as u32;
+    let failed = result.expect_err("transaction should have failed");
+    assert_eq!(
+        format!("{:?}", failed.err),
+        format!("InstructionError(0, Custom({code}))"),
+        "logs: {:#?}",
+        failed.meta.logs
+    );
+}
+
+/// `signer` acts as the rent payer; `fee_payer` pays the transaction fee, so lamport checks on the
+/// rent payer see rent alone.
+#[allow(clippy::result_large_err)]
+pub fn close_listing(
+    env: &mut Env,
+    fee_payer: &Keypair,
+    signer: &Keypair,
+    listing: &Pubkey,
+) -> litesvm::types::TransactionResult {
+    let ix = new_ix(
+        program_id(),
+        adspaces::instruction::CloseListing {}.data(),
+        adspaces::accounts::CloseListing {
+            rent_payer: signer.pubkey(),
+            listing: *listing,
+        }
+        .to_account_metas(None),
+    );
+    env.svm.expire_blockhash();
+    send(&mut env.svm, &[ix], fee_payer, &[signer])
+}
+
+#[allow(clippy::result_large_err, clippy::too_many_arguments)]
+pub fn close_spot(
+    env: &mut Env,
+    fee_payer: &Keypair,
+    signer: &Keypair,
+    listing: &Pubkey,
+    spot: &Pubkey,
+    vault: &Pubkey,
+    seller_ata: &Pubkey,
+) -> litesvm::types::TransactionResult {
+    let ix = new_ix(
+        program_id(),
+        adspaces::instruction::CloseSpot {}.data(),
+        adspaces::accounts::CloseSpot {
+            rent_payer: signer.pubkey(),
+            listing: *listing,
+            spot: *spot,
+            vault: *vault,
+            seller_ata: *seller_ata,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+        }
+        .to_account_metas(None),
+    );
+    env.svm.expire_blockhash();
+    send(&mut env.svm, &[ix], fee_payer, &[signer])
 }

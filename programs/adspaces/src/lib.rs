@@ -3,6 +3,7 @@ pub mod error;
 pub mod events;
 pub mod fees;
 pub mod instructions;
+pub mod rent;
 pub mod state;
 
 use anchor_lang::prelude::*;

@@ -21,6 +21,11 @@ fn create_listing(
 ) -> litesvm::types::TransactionResult {
     let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
     let now = env.clock().unix_timestamp;
+    // Not the reviewer, so leaving out the reviewer's signature really leaves it out.
+    let rent_payer = Keypair::new();
+    env.svm
+        .airdrop(&rent_payer.pubkey(), 1_000_000_000)
+        .unwrap();
     let ix = new_ix(
         program_id(),
         adspaces::instruction::CreateListing {
@@ -45,6 +50,7 @@ fn create_listing(
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             reviewer: reviewer.pubkey(),
+            rent_payer: rent_payer.pubkey(),
             listing,
             config: env.config,
             review_authority: env.review_authority,
@@ -54,9 +60,9 @@ fn create_listing(
         .to_account_metas(None),
     );
     let signers = if include_reviewer_signature {
-        vec![reviewer]
+        vec![reviewer, &rent_payer]
     } else {
-        Vec::new()
+        vec![&rent_payer]
     };
     send(&mut env.svm, &[ix], seller, &signers)
 }
