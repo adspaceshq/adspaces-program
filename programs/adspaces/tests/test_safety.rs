@@ -1,7 +1,7 @@
 mod common;
 
 use anchor_lang::{
-    solana_program::{instruction::AccountMeta, rent, system_program},
+    solana_program::{rent, system_program},
     InstructionData, ToAccountMetas,
 };
 use solana_keypair::Keypair;
@@ -38,6 +38,7 @@ fn create_listing(env: &mut Env, seller: &Keypair, slug: u8, mode: u8, deadline:
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
             listing,
             config: env.config,
             review_authority: env.review_authority,
@@ -68,6 +69,7 @@ fn add_spot(env: &mut Env, seller: &Keypair, listing: &Pubkey) -> (Pubkey, Pubke
             token_program: token_program_id(),
             rent: rent::ID,
             reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
             review_authority: env.review_authority,
         }
         .to_account_metas(None),
@@ -118,27 +120,6 @@ fn set_paused(env: &mut Env, paused: bool) -> litesvm::types::TransactionResult 
     send(&mut env.svm, &[ix], &authority, &[])
 }
 
-#[allow(clippy::result_large_err)]
-fn close_listing(
-    env: &mut Env,
-    seller: &Keypair,
-    listing: &Pubkey,
-    spots: &[Pubkey],
-) -> litesvm::types::TransactionResult {
-    let mut ix = new_ix(
-        program_id(),
-        adspaces::instruction::CloseListing {}.data(),
-        adspaces::accounts::CloseListing {
-            seller: seller.pubkey(),
-            listing: *listing,
-        }
-        .to_account_metas(None),
-    );
-    ix.accounts
-        .extend(spots.iter().map(|s| AccountMeta::new_readonly(*s, false)));
-    send(&mut env.svm, &[ix], seller, &[])
-}
-
 fn new_seller(env: &mut Env) -> Keypair {
     let seller = Keypair::new();
     env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
@@ -150,7 +131,13 @@ fn pause_blocks_claims_until_unpaused() {
     let mut env = Env::new();
     let seller = new_seller(&mut env);
     let now = env.clock().unix_timestamp;
-    let listing = create_listing(&mut env, &seller, 40, adspaces::constants::MODE_FIXED, now + DAY);
+    let listing = create_listing(
+        &mut env,
+        &seller,
+        40,
+        adspaces::constants::MODE_FIXED,
+        now + DAY,
+    );
     let (spot, vault) = add_spot(&mut env, &seller, &listing);
     let (buyer, buyer_ata) = env.new_user(PRICE);
 
@@ -168,8 +155,19 @@ fn pause_blocks_claims_until_unpaused() {
     assert!(send(&mut env.svm, &[forged], &stranger, &[]).is_err());
 
     let paused = set_paused(&mut env, true).unwrap();
-    let expected = base64::engine::general_purpose::STANDARD.encode(anchor_lang::Event::data(&adspaces::events::ProtocolPauseSet { authority: env.mint_authority.pubkey(), paused: true }));
-    assert!(paused.logs.iter().any(|log| log == &format!("Program data: {expected}")), "pausing must emit ProtocolPauseSet");
+    let expected = base64::engine::general_purpose::STANDARD.encode(anchor_lang::Event::data(
+        &adspaces::events::ProtocolPauseSet {
+            authority: env.mint_authority.pubkey(),
+            paused: true,
+        },
+    ));
+    assert!(
+        paused
+            .logs
+            .iter()
+            .any(|log| log == &format!("Program data: {expected}")),
+        "pausing must emit ProtocolPauseSet"
+    );
     assert!(read_config(&env.svm, &env.config).paused);
     assert!(claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault).is_err());
     assert_eq!(token_balance(&env.svm, &vault), 0);
@@ -185,7 +183,13 @@ fn seller_cannot_claim_own_spot() {
     let mut env = Env::new();
     let seller = new_seller(&mut env);
     let now = env.clock().unix_timestamp;
-    let listing = create_listing(&mut env, &seller, 41, adspaces::constants::MODE_FIXED, now + DAY);
+    let listing = create_listing(
+        &mut env,
+        &seller,
+        41,
+        adspaces::constants::MODE_FIXED,
+        now + DAY,
+    );
     let (spot, vault) = add_spot(&mut env, &seller, &listing);
 
     // A funded USDC account owned by the seller, so only the self-dealing check can fail.
@@ -226,38 +230,104 @@ fn seller_cannot_claim_own_spot() {
 }
 
 #[test]
-fn close_listing_requires_deadline_and_closed_spots() {
+fn only_the_rent_payer_closes_spots_and_listing_once_every_spot_is_closed() {
+    use adspaces::error::AdspacesError;
+
     let mut env = Env::new();
     let seller = new_seller(&mut env);
+    let stranger = new_seller(&mut env);
+    let fee_payer = new_seller(&mut env);
+    let rent_payer = env.mint_authority.insecure_clone();
     let now = env.clock().unix_timestamp;
-    let listing = create_listing(&mut env, &seller, 42, adspaces::constants::MODE_FIXED, now + DAY);
+    let listing = create_listing(
+        &mut env,
+        &seller,
+        42,
+        adspaces::constants::MODE_FIXED,
+        now + DAY,
+    );
     let (open_spot, open_vault) = add_spot(&mut env, &seller, &listing);
     let (funded_spot, funded_vault) = add_spot(&mut env, &seller, &listing);
     let (buyer, buyer_ata) = env.new_user(PRICE);
-    claim(&mut env, &buyer, &buyer_ata, &listing, &funded_spot, &funded_vault).unwrap();
+    claim(
+        &mut env,
+        &buyer,
+        &buyer_ata,
+        &listing,
+        &funded_spot,
+        &funded_vault,
+    )
+    .unwrap();
+    let seller_ata = empty_token_account(&mut env, &seller, &seller.pubkey());
 
-    let close_open = new_ix(
-        program_id(),
-        adspaces::instruction::CloseSpot {}.data(),
-        adspaces::accounts::CloseSpot {
-            seller: seller.pubkey(),
-            listing,
-            spot: open_spot,
-            vault: open_vault,
-            token_program: token_program_id(),
-            seller_ata: empty_token_account(&mut env, &seller, &seller.pubkey()),
-            usdc_mint: env.usdc,
-        }
-        .to_account_metas(None),
+    // Open and funded spots both block closing the listing, even for the rent payer.
+    assert_program_error(
+        close_listing(&mut env, &fee_payer, &rent_payer, &listing),
+        AdspacesError::ListingHasActiveSpots,
     );
-    send(&mut env.svm, &[close_open], &seller, &[]).unwrap();
+    // Neither the seller nor a third party can close a spot or the listing.
+    for intruder in [&seller, &stranger] {
+        assert_program_error(
+            close_spot(
+                &mut env,
+                intruder,
+                intruder,
+                &listing,
+                &open_spot,
+                &open_vault,
+                &seller_ata,
+            ),
+            AdspacesError::Unauthorized,
+        );
+        assert_program_error(
+            close_listing(&mut env, intruder, intruder, &listing),
+            AdspacesError::Unauthorized,
+        );
+    }
+    // A funded spot can't be closed out from under its buyer.
+    assert_program_error(
+        close_spot(
+            &mut env,
+            &fee_payer,
+            &rent_payer,
+            &listing,
+            &funded_spot,
+            &funded_vault,
+            &seller_ata,
+        ),
+        AdspacesError::SpotAlreadyFunded,
+    );
 
-    let spots = [open_spot, funded_spot];
-    assert!(close_listing(&mut env, &seller, &listing, &spots).is_err());
+    // The rent payer closes the unsold spot before the deadline; its rent comes back, not to the seller.
+    assert!(env.clock().unix_timestamp < read_listing(&env.svm, &listing).deadline);
+    let seller_lamports = lamports(&env.svm, &seller.pubkey());
+    let payer_lamports = lamports(&env.svm, &rent_payer.pubkey());
+    let open_rent = lamports(&env.svm, &open_spot) + lamports(&env.svm, &open_vault);
+    close_spot(
+        &mut env,
+        &fee_payer,
+        &rent_payer,
+        &listing,
+        &open_spot,
+        &open_vault,
+        &seller_ata,
+    )
+    .unwrap();
+    assert!(env.svm.get_account(&open_spot).is_none());
+    assert!(env.svm.get_account(&open_vault).is_none());
+    assert_eq!(
+        lamports(&env.svm, &rent_payer.pubkey()),
+        payer_lamports + open_rent
+    );
+    assert_eq!(lamports(&env.svm, &seller.pubkey()), seller_lamports);
+    assert_eq!(read_listing(&env.svm, &listing).closed_spot_count, 1);
 
+    // Past the deadline, the funded spot still blocks closing the listing.
     env.warp_to_timestamp(now + DAY);
-    assert!(close_listing(&mut env, &seller, &listing, &spots).is_err());
-    assert!(close_listing(&mut env, &seller, &listing, &spots[..1]).is_err());
+    assert_program_error(
+        close_listing(&mut env, &fee_payer, &rent_payer, &listing),
+        AdspacesError::ListingHasActiveSpots,
+    );
     assert!(env.svm.get_account(&listing).is_some());
 
     let refund = new_ix(
@@ -266,7 +336,7 @@ fn close_listing_requires_deadline_and_closed_spots() {
         adspaces::accounts::RefundSpot {
             caller: seller.pubkey(),
             listing,
-            seller: seller.pubkey(),
+            rent_payer: env.rent_payer(),
             spot: funded_spot,
             vault: funded_vault,
             buyer_ata,
@@ -278,10 +348,27 @@ fn close_listing_requires_deadline_and_closed_spots() {
     );
     send(&mut env.svm, &[refund], &seller, &[]).unwrap();
     assert_eq!(token_balance(&env.svm, &buyer_ata), PRICE);
+    let stored = read_listing(&env.svm, &listing);
+    assert_eq!(stored.closed_spot_count, stored.spot_count);
 
-    env.svm.expire_blockhash();
-    close_listing(&mut env, &seller, &listing, &spots).unwrap();
+    // Once every spot is closed, only the rent payer can close the listing, and its rent comes back.
+    for intruder in [&seller, &stranger] {
+        assert_program_error(
+            close_listing(&mut env, intruder, intruder, &listing),
+            AdspacesError::Unauthorized,
+        );
+    }
+    let seller_lamports = lamports(&env.svm, &seller.pubkey());
+    let payer_lamports = lamports(&env.svm, &rent_payer.pubkey());
+    let listing_rent = lamports(&env.svm, &listing);
+    close_listing(&mut env, &fee_payer, &rent_payer, &listing).unwrap();
     assert!(env.svm.get_account(&listing).is_none());
+    assert_eq!(
+        lamports(&env.svm, &rent_payer.pubkey()),
+        payer_lamports + listing_rent
+    );
+    assert_eq!(lamports(&env.svm, &seller.pubkey()), seller_lamports);
+    assert!(close_listing(&mut env, &fee_payer, &rent_payer, &listing).is_err());
 }
 
 #[test]
@@ -289,7 +376,13 @@ fn timed_out_dispute_refunds_buyer_in_full() {
     let mut env = Env::new();
     let seller = new_seller(&mut env);
     let now = env.clock().unix_timestamp;
-    let listing = create_listing(&mut env, &seller, 43, adspaces::constants::MODE_FIXED, now + DAY);
+    let listing = create_listing(
+        &mut env,
+        &seller,
+        43,
+        adspaces::constants::MODE_FIXED,
+        now + DAY,
+    );
     let (spot, vault) = add_spot(&mut env, &seller, &listing);
     let (buyer, buyer_ata) = env.new_user(PRICE);
     claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault).unwrap();
@@ -325,7 +418,6 @@ fn timed_out_dispute_refunds_buyer_in_full() {
             caller: caller.pubkey(),
             config: env.config,
             listing,
-            seller: seller.pubkey(),
             spot,
             dispute,
             rent_payer: read_dispute(&env.svm, &dispute).rent_payer,
@@ -342,12 +434,33 @@ fn timed_out_dispute_refunds_buyer_in_full() {
     assert_eq!(token_balance(&env.svm, &vault), PRICE);
 
     env.warp_to_timestamp(opened_at + adspaces::constants::DEFAULT_DISPUTE_TIMEOUT_SECONDS);
+    // Rent for the dispute, spot and vault must go back to the listing's rent payer only.
+    let mut misdirected = timeout.clone();
+    let rent_payer_index = misdirected
+        .accounts
+        .iter()
+        .position(|account| account.pubkey == env.rent_payer())
+        .unwrap();
+    misdirected.accounts[rent_payer_index].pubkey = caller.pubkey();
+    assert_program_error(
+        send(&mut env.svm, &[misdirected], &caller, &[]),
+        adspaces::error::AdspacesError::Unauthorized,
+    );
+    let rent = [spot, vault, dispute]
+        .iter()
+        .map(|account| lamports(&env.svm, account))
+        .sum::<u64>();
+    let payer_lamports = lamports(&env.svm, &env.rent_payer());
+    let seller_lamports = lamports(&env.svm, &seller.pubkey());
     env.svm.expire_blockhash();
     send(&mut env.svm, &[timeout], &caller, &[]).unwrap();
     assert_eq!(token_balance(&env.svm, &buyer_ata), PRICE);
     for closed in [spot, vault, dispute] {
         assert!(env.svm.get_account(&closed).is_none());
     }
+    assert_eq!(lamports(&env.svm, &env.rent_payer()), payer_lamports + rent);
+    assert_eq!(lamports(&env.svm, &seller.pubkey()), seller_lamports);
+    assert_eq!(read_listing(&env.svm, &listing).closed_spot_count, 1);
 }
 
 #[test]
@@ -375,9 +488,18 @@ fn migrate_config_upgrades_legacy_layout() {
     assert!(send(&mut env.svm, &[migrate(stranger.pubkey())], &stranger, &[]).is_err());
 
     let authority = env.mint_authority.insecure_clone();
-    send(&mut env.svm, &[migrate(authority.pubkey())], &authority, &[]).unwrap();
+    send(
+        &mut env.svm,
+        &[migrate(authority.pubkey())],
+        &authority,
+        &[],
+    )
+    .unwrap();
     let config = read_config(&env.svm, &env.config);
-    assert_eq!(env.svm.get_account(&env.config).unwrap().data.len(), new_len);
+    assert_eq!(
+        env.svm.get_account(&env.config).unwrap().data.len(),
+        new_len
+    );
     assert!(!config.paused);
     assert_eq!(config.authority, authority.pubkey());
     assert_eq!(config.fee_bps, 250);
@@ -388,7 +510,13 @@ fn migrate_config_upgrades_legacy_layout() {
 
     let seller = new_seller(&mut env);
     let now = env.clock().unix_timestamp;
-    let listing = create_listing(&mut env, &seller, 45, adspaces::constants::MODE_FIXED, now + DAY);
+    let listing = create_listing(
+        &mut env,
+        &seller,
+        45,
+        adspaces::constants::MODE_FIXED,
+        now + DAY,
+    );
     add_spot(&mut env, &seller, &listing);
 }
 
@@ -398,7 +526,13 @@ fn late_bid_extends_auction_deadline() {
     let seller = new_seller(&mut env);
     let now = env.clock().unix_timestamp;
     let deadline = now + DAY;
-    let listing = create_listing(&mut env, &seller, 44, adspaces::constants::MODE_AUCTION, deadline);
+    let listing = create_listing(
+        &mut env,
+        &seller,
+        44,
+        adspaces::constants::MODE_AUCTION,
+        deadline,
+    );
     let (spot, vault) = add_spot(&mut env, &seller, &listing);
     let (alice, alice_ata) = env.new_user(PRICE);
 
@@ -423,7 +557,11 @@ fn late_bid_extends_auction_deadline() {
         send(&mut env.svm, &[ix], &alice, &[])
     };
 
-    bid(&mut env, deadline - adspaces::constants::SNIPE_WINDOW_SECONDS).unwrap();
+    bid(
+        &mut env,
+        deadline - adspaces::constants::SNIPE_WINDOW_SECONDS,
+    )
+    .unwrap();
     assert_eq!(
         read_listing(&env.svm, &listing).deadline,
         deadline + adspaces::constants::SNIPE_EXTENSION_SECONDS
@@ -454,10 +592,23 @@ fn dispute_timeout_is_configurable_within_bounds() {
     let authority = env.mint_authority.insecure_clone();
     let stranger = new_seller(&mut env);
     assert!(set_timeout(&mut env, &stranger, 2 * DAY).is_err());
-    assert!(set_timeout(&mut env, &authority, adspaces::constants::MIN_DISPUTE_TIMEOUT_SECONDS - 1).is_err());
-    assert!(set_timeout(&mut env, &authority, adspaces::constants::MAX_DISPUTE_TIMEOUT_SECONDS + 1).is_err());
+    assert!(set_timeout(
+        &mut env,
+        &authority,
+        adspaces::constants::MIN_DISPUTE_TIMEOUT_SECONDS - 1
+    )
+    .is_err());
+    assert!(set_timeout(
+        &mut env,
+        &authority,
+        adspaces::constants::MAX_DISPUTE_TIMEOUT_SECONDS + 1
+    )
+    .is_err());
     set_timeout(&mut env, &authority, 2 * DAY).unwrap();
-    assert_eq!(read_config(&env.svm, &env.config).dispute_timeout_seconds, 2 * DAY);
+    assert_eq!(
+        read_config(&env.svm, &env.config).dispute_timeout_seconds,
+        2 * DAY
+    );
 }
 
 fn empty_token_account(env: &mut Env, funder: &Keypair, owner: &Pubkey) -> Pubkey {
@@ -470,7 +621,13 @@ fn empty_token_account(env: &mut Env, funder: &Keypair, owner: &Pubkey) -> Pubke
         &token_program_id(),
     );
     send(&mut env.svm, &[create], funder, &[&account]).unwrap();
-    let init = spl_token::instruction::initialize_account(&token_program_id(), &account.pubkey(), &env.usdc, owner).unwrap();
+    let init = spl_token::instruction::initialize_account(
+        &token_program_id(),
+        &account.pubkey(),
+        &env.usdc,
+        owner,
+    )
+    .unwrap();
     send(&mut env.svm, &[init], funder, &[]).unwrap();
     account.pubkey()
 }
@@ -480,7 +637,13 @@ fn shortening_the_timeout_does_not_end_an_open_dispute_early() {
     let mut env = Env::new();
     let seller = new_seller(&mut env);
     let now = env.clock().unix_timestamp;
-    let listing = create_listing(&mut env, &seller, 44, adspaces::constants::MODE_FIXED, now + DAY);
+    let listing = create_listing(
+        &mut env,
+        &seller,
+        44,
+        adspaces::constants::MODE_FIXED,
+        now + DAY,
+    );
     let (spot, vault) = add_spot(&mut env, &seller, &listing);
     let (buyer, buyer_ata) = env.new_user(PRICE);
     claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault).unwrap();
@@ -490,7 +653,11 @@ fn shortening_the_timeout_does_not_end_an_open_dispute_early() {
     let (dispute, _) = dispute_pda(&spot);
     let raise = new_ix(
         program_id(),
-        adspaces::instruction::RaiseDispute { evidence_hash: [0; 32], evidence_uri: String::new() }.data(),
+        adspaces::instruction::RaiseDispute {
+            evidence_hash: [0; 32],
+            evidence_uri: String::new(),
+        }
+        .data(),
         adspaces::accounts::RaiseDispute {
             buyer: buyer.pubkey(),
             rent_payer: env.mint_authority.pubkey(),
@@ -506,7 +673,12 @@ fn shortening_the_timeout_does_not_end_an_open_dispute_early() {
 
     // The platform shortens the timeout to its minimum while this dispute is open.
     let authority = env.mint_authority.insecure_clone();
-    set_timeout(&mut env, &authority, adspaces::constants::MIN_DISPUTE_TIMEOUT_SECONDS).unwrap();
+    set_timeout(
+        &mut env,
+        &authority,
+        adspaces::constants::MIN_DISPUTE_TIMEOUT_SECONDS,
+    )
+    .unwrap();
 
     let caller = new_seller(&mut env);
     let timeout = new_ix(
@@ -516,7 +688,6 @@ fn shortening_the_timeout_does_not_end_an_open_dispute_early() {
             caller: caller.pubkey(),
             config: env.config,
             listing,
-            seller: seller.pubkey(),
             spot,
             dispute,
             rent_payer: read_dispute(&env.svm, &dispute).rent_payer,

@@ -20,7 +20,15 @@ fn create_auction_listing(
     min_increment: u64,
     double_up: bool,
 ) -> Pubkey {
-    create_auction_listing_timed(env, seller, slug_hash, min_increment, double_up, 30 * 86_400, 37 * 86_400)
+    create_auction_listing_timed(
+        env,
+        seller,
+        slug_hash,
+        min_increment,
+        double_up,
+        30 * 86_400,
+        37 * 86_400,
+    )
 }
 
 // `deadline_offset` is the bidding deadline; artwork closes with it, and delivery is due at `delivery_offset`.
@@ -56,6 +64,7 @@ fn create_auction_listing_timed(
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
             listing,
             config: env.config,
             review_authority: env.review_authority,
@@ -82,6 +91,7 @@ fn create_auction_listing_timed(
             token_program: token_program_id(),
             rent: rent::ID,
             reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
             review_authority: env.review_authority,
         }
         .to_account_metas(None),
@@ -349,8 +359,20 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
             .to_account_metas(None),
         )
     };
-    assert!(send(&mut env.svm, &[dispute_ix(alice.pubkey())], &alice, &[&env.mint_authority]).is_err());
-    send(&mut env.svm, &[dispute_ix(bob.pubkey())], &bob, &[&env.mint_authority]).unwrap();
+    assert!(send(
+        &mut env.svm,
+        &[dispute_ix(alice.pubkey())],
+        &alice,
+        &[&env.mint_authority]
+    )
+    .is_err());
+    send(
+        &mut env.svm,
+        &[dispute_ix(bob.pubkey())],
+        &bob,
+        &[&env.mint_authority],
+    )
+    .unwrap();
     assert_eq!(
         read_spot(&env.svm, &spot).status,
         adspaces::constants::SPOT_DISPUTED
@@ -424,6 +446,7 @@ fn listing_rejects_dust_bid_steps() {
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
             listing,
             config: env.config,
             review_authority: env.review_authority,
@@ -442,19 +465,40 @@ fn anti_snipe_extension_stops_at_delivery_deadline() {
     env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
 
     // Delivery is due only 120 seconds after bidding closes, so one snipe extension would overshoot it.
-    let listing = create_auction_listing_timed(&mut env, &seller, [12u8; 16], INCREMENT, false, 30 * 86_400, 30 * 86_400 + 120);
+    let listing = create_auction_listing_timed(
+        &mut env,
+        &seller,
+        [12u8; 16],
+        INCREMENT,
+        false,
+        30 * 86_400,
+        30 * 86_400 + 120,
+    );
     let (spot, vault) = spot_and_vault(&listing);
     let before = read_listing(&env.svm, &listing);
     let cap = before.delivery_deadline - 1;
 
     let (alice, alice_ata) = env.new_user(1_000_000_000);
     env.warp_to_timestamp(before.deadline - 10);
-    bid(&mut env, &alice, &alice_ata, &listing, &spot, &vault, None, START).unwrap();
+    bid(
+        &mut env, &alice, &alice_ata, &listing, &spot, &vault, None, START,
+    )
+    .unwrap();
     assert_eq!(read_listing(&env.svm, &listing).deadline, cap);
 
     // At the cap, a further late bid must not move the deadline again.
     let (bob, bob_ata) = env.new_user(1_000_000_000);
     env.warp_to_timestamp(cap - 10);
-    bid(&mut env, &bob, &bob_ata, &listing, &spot, &vault, Some(alice_ata), START + INCREMENT).unwrap();
+    bid(
+        &mut env,
+        &bob,
+        &bob_ata,
+        &listing,
+        &spot,
+        &vault,
+        Some(alice_ata),
+        START + INCREMENT,
+    )
+    .unwrap();
     assert_eq!(read_listing(&env.svm, &listing).deadline, cap);
 }

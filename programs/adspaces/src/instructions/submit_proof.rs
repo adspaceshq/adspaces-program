@@ -9,8 +9,9 @@ use crate::{
 
 #[derive(Accounts)]
 pub struct SubmitProof<'info> {
-    #[account(mut)]
     pub seller: Signer<'info>,
+    #[account(mut, address = listing.rent_payer @ AdspacesError::Unauthorized)]
+    pub rent_payer: Signer<'info>,
     #[account(
         seeds = [LISTING_SEED, seller.key().as_ref(), listing.slug_hash.as_ref()],
         bump = listing.bump,
@@ -27,7 +28,7 @@ pub struct SubmitProof<'info> {
     pub spot: Account<'info, Spot>,
     #[account(
         init,
-        payer = seller,
+        payer = rent_payer,
         space = 8 + ProofRecord::INIT_SPACE,
         seeds = [PROOF_SEED, spot.key().as_ref()],
         bump,

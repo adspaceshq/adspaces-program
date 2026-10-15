@@ -34,6 +34,7 @@ fn create_fixed_listing(env: &mut Env, seller: &Keypair, slug_hash: [u8; 16]) ->
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
             listing,
             config: env.config,
             review_authority: env.review_authority,
@@ -48,6 +49,8 @@ fn create_fixed_listing(env: &mut Env, seller: &Keypair, slug_hash: [u8; 16]) ->
     assert_eq!(stored.seller, seller.pubkey());
     assert_eq!(stored.mode, adspaces::constants::MODE_FIXED);
     assert_eq!(stored.spot_count, 0);
+    assert_eq!(stored.closed_spot_count, 0);
+    assert_eq!(stored.rent_payer, env.rent_payer());
     assert_eq!(stored.delivery_deadline, now + 37 * 86_400);
     listing
 }
@@ -80,6 +83,7 @@ fn delivery_deadline_must_follow_artwork_close() {
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
             listing,
             config: env.config,
             review_authority: env.review_authority,
@@ -128,6 +132,7 @@ fn metadata_uri_accepts_exact_account_limit() {
             adspaces::accounts::CreateListing {
                 seller: seller.pubkey(),
                 reviewer: env.mint_authority.pubkey(),
+                rent_payer: env.rent_payer(),
                 listing,
                 config: env.config,
                 review_authority: env.review_authority,
@@ -162,6 +167,7 @@ fn add_spot_to(env: &mut Env, seller: &Keypair, listing: &Pubkey, price: u64) ->
             token_program: token_program_id(),
             rent: rent::ID,
             reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
             review_authority: env.review_authority,
         }
         .to_account_metas(None),
@@ -306,6 +312,7 @@ fn fixed_listing_rejects_bids_and_vice_versa() {
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
             listing: auction_listing,
             config: env.config,
             review_authority: env.review_authority,
@@ -364,6 +371,7 @@ fn claim_after_deadline_fails() {
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
             listing,
             config: env.config,
             review_authority: env.review_authority,
@@ -422,6 +430,7 @@ fn add_spot_after_deadline_fails() {
             token_program: token_program_id(),
             rent: rent::ID,
             reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
             review_authority: env.review_authority,
         }
         .to_account_metas(None),
@@ -436,7 +445,7 @@ fn spot_added_without_the_review_authority_is_refused() {
     let seller = Keypair::new();
     env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
     let listing = create_fixed_listing(&mut env, &seller, [31u8; 16]);
-    let (spot, _) = spot_pda(&listing, 1);
+    let (spot, _) = spot_pda(&listing, 0);
     let (vault, _) = vault_pda(&spot);
     // The seller alone can't add a spot after approval: a stranger posing as the reviewer is rejected.
     let stranger = Keypair::new();
@@ -455,9 +464,18 @@ fn spot_added_without_the_review_authority_is_refused() {
             token_program: token_program_id(),
             rent: rent::ID,
             reviewer: stranger.pubkey(),
+            rent_payer: env.rent_payer(),
             review_authority: env.review_authority,
         }
         .to_account_metas(None),
     );
-    assert!(send(&mut env.svm, &[ix], &seller, &[&stranger]).is_err());
+    assert_program_error(
+        send(
+            &mut env.svm,
+            &[ix],
+            &seller,
+            &[&stranger, &env.mint_authority],
+        ),
+        adspaces::error::AdspacesError::InvalidReviewAuthority,
+    );
 }

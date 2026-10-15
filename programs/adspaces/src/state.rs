@@ -50,11 +50,16 @@ pub struct Listing {
     pub min_increment: u64,
     pub double_up: bool,
     pub spot_count: u8,
+    /// Spots already closed (paid out, refunded, settled by dispute or withdrawn unsold).
+    pub closed_spot_count: u8,
     pub status: u8,
     pub treasury: Pubkey,
     pub fee_bps: u16,
     pub uplift_fee_bps: u16,
     pub max_fee_bps: u16,
+    /// Platform account that paid the rent for this listing and its spots, vaults and proofs.
+    /// Every one of those accounts returns its rent here when it closes.
+    pub rent_payer: Pubkey,
     pub bump: u8,
 }
 

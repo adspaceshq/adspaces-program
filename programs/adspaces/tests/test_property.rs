@@ -9,6 +9,12 @@
 //!   which never changes.
 //! - A failed transaction moves no tokens; a successful one moves exactly the expected amounts
 //!   (in particular an outbid bidder gets exactly their bid back).
+//! - Rent is conserved: the listing's rent payer plus every listing, spot, vault, proof and dispute
+//!   account always hold the same lamports, so every closed account's rent went to the rent payer.
+//!   No seller or buyer ever gains lamports.
+//! - Each listing's spot_count / closed_spot_count match the spots added and closed. At the end the
+//!   rent payer closes the open spots, and close_listing succeeds exactly for listings whose spots
+//!   are all closed, and only for the rent payer.
 //!
 //! Reproduce a failure with the printed seed:
 //! `ADSPACES_PROP_SEED=0x... cargo test -p adspaces --test test_property`.
@@ -35,6 +41,8 @@ const USDC: u64 = 1_000_000;
 const SELLER: usize = 3;
 const TREASURY: usize = 4;
 const MAX_SPOTS: usize = 8;
+/// Names the listing's real rent payer in action descriptions.
+const PLATFORM: &str = "platform rent payer";
 
 /// xorshift64: deterministic, dependency-free.
 struct Rng(u64);
@@ -101,6 +109,9 @@ struct Case {
     listings: Vec<Pubkey>,
     spots: Vec<SpotModel>,
     total: u64,
+    /// Rent payer lamports plus every lamport held by the accounts it funded; constant, because
+    /// the rent payer never pays a transaction fee and all rent returns to it.
+    rent_total: u64,
     log: Vec<String>,
 }
 
@@ -150,15 +161,20 @@ impl Case {
             listings: Vec::new(),
             spots: Vec::new(),
             total,
+            rent_total: 0,
             log: Vec::new(),
         };
         case.create_listing(MODE_FIXED);
         case.create_listing(MODE_AUCTION);
         for listing in 0..2 {
             for _ in 0..case.rng.range(1, 3) {
-                assert!(case.add_spot(listing), "seed {seed:#x}: setup add_spot failed");
+                assert!(
+                    case.add_spot(listing),
+                    "seed {seed:#x}: setup add_spot failed"
+                );
             }
         }
+        case.rent_total = case.rent_pool();
         case
     }
 
@@ -177,9 +193,7 @@ impl Case {
         let now = self.env.clock().unix_timestamp;
         let deadline = now + self.rng.range(3_600, 3 * 86_400) as i64;
         let delivery_deadline = deadline + self.rng.range(60, 3 * 86_400) as i64;
-        let review = self
-            .rng
-            .range(MIN_REVIEW_WINDOW_SECONDS as u64, 3 * 86_400) as i64;
+        let review = self.rng.range(MIN_REVIEW_WINDOW_SECONDS as u64, 3 * 86_400) as i64;
         let fee_bps = self.rng.range(250, 1_000) as u16;
         let (double_up, min_increment, uplift_fee_bps, max_fee_bps) = if mode == MODE_FIXED {
             (false, 0, 0, fee_bps)
@@ -214,6 +228,7 @@ impl Case {
             adspaces::accounts::CreateListing {
                 seller: seller.pubkey(),
                 reviewer: self.env.mint_authority.pubkey(),
+                rent_payer: self.env.rent_payer(),
                 listing,
                 config: self.env.config,
                 review_authority: self.env.review_authority,
@@ -254,6 +269,7 @@ impl Case {
                 token_program: token_program_id(),
                 rent: rent::ID,
                 reviewer: self.env.mint_authority.pubkey(),
+                rent_payer: self.env.rent_payer(),
                 review_authority: self.env.review_authority,
             }
             .to_account_metas(None),
@@ -345,12 +361,45 @@ impl Case {
             .collect()
     }
 
+    /// Rent payer lamports plus the lamports of every listing, spot, vault, proof and dispute
+    /// account (closed accounts count as 0).
+    fn rent_pool(&self) -> u64 {
+        let svm = &self.env.svm;
+        let funded: u64 = self
+            .listings
+            .iter()
+            .map(|l| lamports(svm, l))
+            .chain(self.spots.iter().flat_map(|m| {
+                [
+                    m.spot,
+                    m.vault,
+                    proof_pda(&m.spot).0,
+                    dispute_pda(&m.spot).0,
+                ]
+                .map(|a| lamports(svm, &a))
+            }))
+            .sum();
+        lamports(svm, &self.env.rent_payer()) + funded
+    }
+
+    fn actor_lamports(&self) -> Vec<u64> {
+        self.actors
+            .iter()
+            .map(|a| lamports(&self.env.svm, &a.pubkey()))
+            .collect()
+    }
+
     fn vault_slot(s: usize) -> usize {
         TREASURY + 1 + s
     }
 
     /// Every tracked account changed by exactly the listed amounts and nothing else moved.
-    fn expect_deltas(&self, before: &[Option<u64>], after: &[Option<u64>], deltas: &[(usize, i128)]) {
+    fn expect_deltas(
+        &self,
+        before: &[Option<u64>],
+        after: &[Option<u64>],
+        deltas: &[(usize, i128)],
+    ) {
         for i in 0..before.len() {
             let expected: i128 = deltas.iter().filter(|(j, _)| *j == i).map(|(_, d)| d).sum();
             let actual = after[i].unwrap_or(0) as i128 - before[i].unwrap_or(0) as i128;
@@ -368,6 +417,7 @@ impl Case {
     fn step(&mut self) {
         let s = self.rng.below(self.spots.len() as u64) as usize;
         let before = self.snapshot();
+        let lamports_before = self.actor_lamports();
         let vault_before = before[Self::vault_slot(s)].unwrap_or(0);
         let pre_spot = self.chain_spot(s);
         let pre_listing = self.listing_of(s);
@@ -409,7 +459,16 @@ impl Case {
             self.expect_deltas(&before, &after, &expected);
             self.check_success_preconditions(&description, s, pre_spot.as_ref(), &pre_listing, now);
         } else if after != before {
-            self.fail(format!("failed transaction moved tokens: {before:?} -> {after:?}"));
+            self.fail(format!(
+                "failed transaction moved tokens: {before:?} -> {after:?}"
+            ));
+        }
+        // Rent never lands on the seller or a buyer: their SOL only ever goes down (fees).
+        let lamports_after = self.actor_lamports();
+        for (i, (b, a)) in lamports_before.iter().zip(&lamports_after).enumerate() {
+            if a > b {
+                self.fail(format!("actor {i} gained {} lamports", a - b));
+            }
         }
         self.check_invariants();
     }
@@ -433,7 +492,10 @@ impl Case {
                 && now < listing.deadline
                 && listing.mode == MODE_AUCTION
         } else if description.starts_with("submit_proof") {
-            status == Some(SPOT_FUNDED) && now >= listing.deadline && now < listing.delivery_deadline
+            status == Some(SPOT_FUNDED)
+                && now >= listing.deadline
+                && now < listing.delivery_deadline
+                && description == format!("submit_proof(actor {SELLER}, {PLATFORM})")
         } else if description.starts_with("raise_dispute") {
             status == Some(SPOT_FUNDED)
                 && now >= listing.delivery_deadline
@@ -450,7 +512,7 @@ impl Case {
         } else if description.starts_with("withdraw_seller") {
             status == Some(SPOT_FUNDED) && proof && now >= review_end
         } else if description.starts_with("close_spot") {
-            status == Some(SPOT_OPEN)
+            status == Some(SPOT_OPEN) && description.starts_with(&format!("close_spot({PLATFORM}"))
         } else {
             true
         };
@@ -475,6 +537,31 @@ impl Case {
             ));
         }
 
+        let rent_pool = self.rent_pool();
+        if rent_pool != self.rent_total {
+            self.fail(format!(
+                "rent not conserved: rent payer + funded accounts hold {rent_pool}, expected {}",
+                self.rent_total
+            ));
+        }
+        for (l, listing) in self.listings.iter().enumerate() {
+            if self.env.svm.get_account(listing).is_none() {
+                continue;
+            }
+            let on_chain = read_listing(&self.env.svm, listing);
+            let spots = self.spots.iter().filter(|m| m.listing == l);
+            let added = spots.clone().count();
+            let closed = spots.filter(|m| m.closed).count();
+            if on_chain.spot_count as usize != added
+                || on_chain.closed_spot_count as usize != closed
+            {
+                self.fail(format!(
+                    "listing {l} counts {}/{} closed, tracked {closed}/{added}",
+                    on_chain.closed_spot_count, on_chain.spot_count
+                ));
+            }
+        }
+
         for (s, model) in self.spots.iter().enumerate() {
             let vault = balance(&self.env.svm, &model.vault);
             let vault_exists = self.env.svm.get_account(&model.vault).is_some();
@@ -483,10 +570,14 @@ impl Case {
             match self.chain_spot(s) {
                 None => {
                     if !model.closed {
-                        self.fail(format!("spot {s} disappeared without a terminal instruction"));
+                        self.fail(format!(
+                            "spot {s} disappeared without a terminal instruction"
+                        ));
                     }
                     if vault_exists {
-                        self.fail(format!("spot {s} is closed but its vault still exists ({vault:?})"));
+                        self.fail(format!(
+                            "spot {s} is closed but its vault still exists ({vault:?})"
+                        ));
                     }
                     if dispute_exists {
                         self.fail(format!("spot {s} is closed but its dispute record remains"));
@@ -494,9 +585,12 @@ impl Case {
                 }
                 Some(spot) => {
                     if model.closed {
-                        self.fail(format!("spot {s} still exists after a terminal instruction"));
+                        self.fail(format!(
+                            "spot {s} still exists after a terminal instruction"
+                        ));
                     }
-                    let vault = vault.unwrap_or_else(|| self.fail(format!("spot {s} lost its vault")));
+                    let vault =
+                        vault.unwrap_or_else(|| self.fail(format!("spot {s} lost its vault")));
                     let escrowed = match spot.status {
                         SPOT_OPEN => {
                             if spot.current_bid != 0 || model.escrow != 0 {
@@ -622,7 +716,10 @@ impl Case {
             .to_account_metas(None),
         );
         let ok = exec(&mut self.env.svm, ix, &self.actors[a], &[]);
-        let mut expected = vec![(a, -(amount as i128)), (Self::vault_slot(s), amount as i128)];
+        let mut expected = vec![
+            (a, -(amount as i128)),
+            (Self::vault_slot(s), amount as i128),
+        ];
         if has_bid {
             // The outbid bidder gets exactly their bid back, out of the vault.
             let p = prev_actor.expect("top bidder is always a known actor");
@@ -665,7 +762,10 @@ impl Case {
         (
             format!("donate(actor {a}, {amount})"),
             ok,
-            vec![(a, -(amount as i128)), (Self::vault_slot(s), amount as i128)],
+            vec![
+                (a, -(amount as i128)),
+                (Self::vault_slot(s), amount as i128),
+            ],
         )
     }
 
@@ -706,8 +806,18 @@ impl Case {
         } else {
             self.random_actor()
         };
+        // Usually the listing's rent payer co-signs; sometimes an actor poses as it (must be rejected).
+        let impostor = if self.rng.chance(90) {
+            None
+        } else {
+            Some(self.random_actor())
+        };
         let m = &self.spots[s];
         let (proof, _) = proof_pda(&m.spot);
+        let rent_payer = match impostor {
+            None => &self.env.mint_authority,
+            Some(i) => &self.actors[i],
+        };
         let ix = new_ix(
             program_id(),
             adspaces::instruction::SubmitProof {
@@ -717,6 +827,7 @@ impl Case {
             .data(),
             adspaces::accounts::SubmitProof {
                 seller: self.actors[a].pubkey(),
+                rent_payer: rent_payer.pubkey(),
                 listing: self.listings[m.listing],
                 spot: m.spot,
                 proof,
@@ -724,8 +835,12 @@ impl Case {
             }
             .to_account_metas(None),
         );
-        let ok = exec(&mut self.env.svm, ix, &self.actors[a], &[]);
-        (format!("submit_proof(actor {a})"), ok, vec![])
+        let ok = exec(&mut self.env.svm, ix, &self.actors[a], &[rent_payer]);
+        let payer = match impostor {
+            None => PLATFORM.to_string(),
+            Some(i) => format!("rent payer actor {i}"),
+        };
+        (format!("submit_proof(actor {a}, {payer})"), ok, vec![])
     }
 
     fn raise_dispute(&mut self, s: usize) -> (String, bool, Vec<(usize, i128)>) {
@@ -733,7 +848,11 @@ impl Case {
         let (evidence_hash, evidence_uri, kind) = match self.rng.below(4) {
             0 => ([0; 32], String::new(), "no evidence"),
             1 => ([9; 32], String::new(), "hash without uri"),
-            _ => ([9; 32], "ipfs://adspaces-property-dispute".to_string(), "evidence"),
+            _ => (
+                [9; 32],
+                "ipfs://adspaces-property-dispute".to_string(),
+                "evidence",
+            ),
         };
         let m = &self.spots[s];
         let (dispute, _) = dispute_pda(&m.spot);
@@ -830,7 +949,14 @@ impl Case {
             }
             .to_account_metas(None),
         );
-        let ok = exec(&mut self.env.svm, ix, &self.env.mint_authority, &[]);
+        // The resolver co-signs; an actor pays the fee, so the rent payer only ever moves rent.
+        let fee_payer = self.random_actor();
+        let ok = exec(
+            &mut self.env.svm,
+            ix,
+            &self.actors[fee_payer],
+            &[&self.env.mint_authority],
+        );
         let seller_gross = (vault_before as u128 * bps.min(10_000) as u128 / 10_000) as i128;
         let expected = vec![
             (b, vault_before as i128 - seller_gross),
@@ -858,7 +984,6 @@ impl Case {
                 caller: self.actors[caller].pubkey(),
                 config: self.env.config,
                 listing: self.listings[m.listing],
-                seller: self.actors[SELLER].pubkey(),
                 spot: m.spot,
                 dispute,
                 rent_payer,
@@ -877,11 +1002,19 @@ impl Case {
         (
             format!("timeout(caller {caller}, buyer actor {b})"),
             ok,
-            vec![(b, vault_before as i128), (Self::vault_slot(s), -(vault_before as i128))],
+            vec![
+                (b, vault_before as i128),
+                (Self::vault_slot(s), -(vault_before as i128)),
+            ],
         )
     }
 
-    fn refund(&mut self, s: usize, vault_before: u64, by_seller: bool) -> (String, bool, Vec<(usize, i128)>) {
+    fn refund(
+        &mut self,
+        s: usize,
+        vault_before: u64,
+        by_seller: bool,
+    ) -> (String, bool, Vec<(usize, i128)>) {
         let caller = if by_seller {
             SELLER
         } else {
@@ -896,7 +1029,7 @@ impl Case {
             adspaces::accounts::RefundSpot {
                 caller: self.actors[caller].pubkey(),
                 listing: self.listings[m.listing],
-                seller: self.actors[SELLER].pubkey(),
+                rent_payer: self.env.rent_payer(),
                 spot: m.spot,
                 vault: m.vault,
                 buyer_ata: self.accounts[b],
@@ -918,15 +1051,24 @@ impl Case {
         (
             format!("refund({who}, buyer actor {b})"),
             ok,
-            vec![(b, vault_before as i128), (Self::vault_slot(s), -(vault_before as i128))],
+            vec![
+                (b, vault_before as i128),
+                (Self::vault_slot(s), -(vault_before as i128)),
+            ],
         )
     }
 
-    fn withdraw_seller(&mut self, s: usize, vault_before: u64) -> (String, bool, Vec<(usize, i128)>) {
+    fn withdraw_seller(
+        &mut self,
+        s: usize,
+        vault_before: u64,
+    ) -> (String, bool, Vec<(usize, i128)>) {
         let caller = self.random_actor();
         let fee = self
             .chain_spot(s)
-            .map(|spot| adspaces::fees::calculate_fee(&self.listing_of(s), &spot, vault_before).unwrap())
+            .map(|spot| {
+                adspaces::fees::calculate_fee(&self.listing_of(s), &spot, vault_before).unwrap()
+            })
             .unwrap_or(0);
         let m = &self.spots[s];
         let ix = new_ix(
@@ -936,6 +1078,7 @@ impl Case {
                 caller: self.actors[caller].pubkey(),
                 listing: self.listings[m.listing],
                 seller: self.actors[SELLER].pubkey(),
+                rent_payer: self.env.rent_payer(),
                 spot: m.spot,
                 vault: m.vault,
                 seller_ata: self.accounts[SELLER],
@@ -968,12 +1111,22 @@ impl Case {
         } else {
             self.random_actor()
         };
+        // Usually the listing's rent payer; sometimes the seller or another actor (must be rejected).
+        let intruder = if self.rng.chance(80) {
+            None
+        } else {
+            Some(self.random_actor())
+        };
+        let signer = match intruder {
+            None => &self.env.mint_authority,
+            Some(i) => &self.actors[i],
+        };
         let m = &self.spots[s];
         let ix = new_ix(
             program_id(),
             adspaces::instruction::CloseSpot {}.data(),
             adspaces::accounts::CloseSpot {
-                seller: self.actors[SELLER].pubkey(),
+                rent_payer: signer.pubkey(),
                 listing: self.listings[m.listing],
                 spot: m.spot,
                 vault: m.vault,
@@ -983,18 +1136,113 @@ impl Case {
             }
             .to_account_metas(None),
         );
-        let ok = exec(&mut self.env.svm, ix, &self.actors[SELLER], &[]);
+        // The seller pays the fee, so the rent payer only ever moves rent.
+        let ok = exec(&mut self.env.svm, ix, &self.actors[SELLER], &[signer]);
         if ok {
             self.spots[s].closed = true;
         }
+        let by = match intruder {
+            None => PLATFORM.to_string(),
+            Some(i) => format!("actor {i}"),
+        };
         (
-            format!("close_spot(to actor {destination})"),
+            format!("close_spot({by}, to actor {destination})"),
             ok,
             vec![
                 (destination, vault_before as i128),
                 (Self::vault_slot(s), -(vault_before as i128)),
             ],
         )
+    }
+
+    // ---- wind-down ---------------------------------------------------------------------------
+
+    /// The rent payer closes every spot still open, then each listing must close exactly when all
+    /// of its spots are closed, only for the rent payer, and with its rent going back to it.
+    fn finish(&mut self) {
+        let lamports_before = self.actor_lamports();
+        for s in 0..self.spots.len() {
+            if self.chain_spot(s).map(|p| p.status) != Some(SPOT_OPEN) {
+                continue;
+            }
+            let m = &self.spots[s];
+            let ix = new_ix(
+                program_id(),
+                adspaces::instruction::CloseSpot {}.data(),
+                adspaces::accounts::CloseSpot {
+                    rent_payer: self.env.rent_payer(),
+                    listing: self.listings[m.listing],
+                    spot: m.spot,
+                    vault: m.vault,
+                    seller_ata: self.accounts[SELLER],
+                    usdc_mint: self.env.usdc,
+                    token_program: token_program_id(),
+                }
+                .to_account_metas(None),
+            );
+            let signer = self.env.mint_authority.insecure_clone();
+            if !exec(&mut self.env.svm, ix, &self.actors[SELLER], &[&signer]) {
+                self.fail(format!(
+                    "wind-down: rent payer could not close open spot {s}"
+                ));
+            }
+            self.spots[s].closed = true;
+            self.log
+                .push(format!("wind-down: close_spot({PLATFORM}) spot {s}"));
+            self.check_invariants();
+        }
+
+        for l in 0..self.listings.len() {
+            let listing = self.listings[l];
+            let close = |rent_payer: Pubkey| {
+                new_ix(
+                    program_id(),
+                    adspaces::instruction::CloseListing {}.data(),
+                    adspaces::accounts::CloseListing {
+                        rent_payer,
+                        listing,
+                    }
+                    .to_account_metas(None),
+                )
+            };
+            let seller = self.actors[SELLER].insecure_clone();
+            if exec(&mut self.env.svm, close(seller.pubkey()), &seller, &[]) {
+                self.fail(format!("wind-down: the seller closed listing {l}"));
+            }
+            let all_closed = self
+                .spots
+                .iter()
+                .filter(|m| m.listing == l)
+                .all(|m| m.closed);
+            let signer = self.env.mint_authority.insecure_clone();
+            let ok = exec(
+                &mut self.env.svm,
+                close(signer.pubkey()),
+                &seller,
+                &[&signer],
+            );
+            self.log.push(format!(
+                "wind-down: close_listing({PLATFORM}) listing {l} -> {}",
+                if ok { "ok" } else { "err" }
+            ));
+            if ok != all_closed {
+                self.fail(format!(
+                    "close_listing on listing {l} returned ok={ok} with all spots closed={all_closed}"
+                ));
+            }
+            if ok && self.env.svm.get_account(&listing).is_some() {
+                self.fail(format!("listing {l} survived close_listing"));
+            }
+            // The rent invariant covers the closed listing: its lamports are now the rent payer's.
+            self.check_invariants();
+        }
+
+        let lamports_after = self.actor_lamports();
+        for (i, (b, a)) in lamports_before.iter().zip(&lamports_after).enumerate() {
+            if a > b {
+                self.fail(format!("wind-down: actor {i} gained {} lamports", a - b));
+            }
+        }
     }
 }
 
@@ -1034,6 +1282,7 @@ fn run_case(seed: u64, steps: u64, base: &Env) -> u64 {
     for _ in 0..steps {
         case.step();
     }
+    case.finish();
     case.log.iter().filter(|l| l.ends_with("-> ok")).count() as u64
 }
 
@@ -1044,7 +1293,9 @@ fn random_sequences_preserve_escrow_invariants() {
         Some(seed) => vec![seed],
         None => {
             let cases = env_u64("ADSPACES_PROP_CASES").unwrap_or(DEFAULT_CASES);
-            (0..cases).map(|i| BASE_SEED ^ i.wrapping_mul(0x2545_f491_4f6c_dd1d)).collect()
+            (0..cases)
+                .map(|i| BASE_SEED ^ i.wrapping_mul(0x2545_f491_4f6c_dd1d))
+                .collect()
         }
     };
     let base = Env::new();
@@ -1060,5 +1311,8 @@ fn random_sequences_preserve_escrow_invariants() {
         started.elapsed()
     );
     // Guard against a harness that only ever exercises failing paths.
-    assert!(succeeded * 5 >= total, "too few successful actions: {succeeded}/{total}");
+    assert!(
+        succeeded * 5 >= total,
+        "too few successful actions: {succeeded}/{total}"
+    );
 }

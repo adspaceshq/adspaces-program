@@ -5,6 +5,7 @@ use crate::{
     constants::*,
     error::AdspacesError,
     events::SpotRefunded,
+    rent::record_spot_closed,
     state::{Listing, ProofRecord, Spot},
 };
 
@@ -12,12 +13,13 @@ use crate::{
 pub struct RefundSpot<'info> {
     pub caller: Signer<'info>,
     #[account(
+        mut,
         seeds = [LISTING_SEED, listing.seller.as_ref(), listing.slug_hash.as_ref()],
         bump = listing.bump,
     )]
     pub listing: Box<Account<'info, Listing>>,
-    #[account(mut, address = listing.seller @ AdspacesError::Unauthorized)]
-    pub seller: SystemAccount<'info>,
+    #[account(mut, address = listing.rent_payer @ AdspacesError::Unauthorized)]
+    pub rent_payer: SystemAccount<'info>,
     #[account(
         mut,
         seeds = [SPOT_SEED, listing.key().as_ref(), &[spot.index]],
@@ -42,7 +44,7 @@ pub struct RefundSpot<'info> {
     #[account(constraint = usdc_mint.key() == listing.mint @ AdspacesError::InvalidMint)]
     pub usdc_mint: Box<Account<'info, Mint>>,
     pub token_program: Program<'info, Token>,
-    /// Proof submitted before a seller-initiated refund; closed so its rent returns to the seller.
+    /// Proof submitted before a seller-initiated refund; closed so its rent returns to the rent payer.
     #[account(
         mut,
         seeds = [PROOF_SEED, spot.key().as_ref()],
@@ -87,7 +89,7 @@ pub fn handle_refund_spot(ctx: Context<RefundSpot>) -> Result<()> {
         ctx.accounts.token_program.key(),
         token::CloseAccount {
             account: ctx.accounts.vault.to_account_info(),
-            destination: ctx.accounts.seller.to_account_info(),
+            destination: ctx.accounts.rent_payer.to_account_info(),
             authority: ctx.accounts.spot.to_account_info(),
         },
         signer_seeds,
@@ -103,9 +105,12 @@ pub fn handle_refund_spot(ctx: Context<RefundSpot>) -> Result<()> {
     });
 
     if let Some(ref proof) = ctx.accounts.proof {
-        proof.close(ctx.accounts.seller.to_account_info())?;
+        proof.close(ctx.accounts.rent_payer.to_account_info())?;
     }
-    ctx.accounts.spot.close(ctx.accounts.seller.to_account_info())?;
+    ctx.accounts
+        .spot
+        .close(ctx.accounts.rent_payer.to_account_info())?;
+    record_spot_closed(&mut ctx.accounts.listing)?;
 
     Ok(())
 }

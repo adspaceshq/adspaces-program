@@ -6,6 +6,7 @@ use crate::{
     error::AdspacesError,
     events::SellerWithdrawn,
     fees::calculate_fee,
+    rent::record_spot_closed,
     state::{Listing, ProofRecord, Spot},
 };
 
@@ -13,12 +14,15 @@ use crate::{
 pub struct WithdrawSeller<'info> {
     pub caller: Signer<'info>,
     #[account(
+        mut,
         seeds = [LISTING_SEED, listing.seller.as_ref(), listing.slug_hash.as_ref()],
         bump = listing.bump,
     )]
     pub listing: Box<Account<'info, Listing>>,
-    #[account(mut, address = listing.seller @ AdspacesError::Unauthorized)]
+    #[account(address = listing.seller @ AdspacesError::Unauthorized)]
     pub seller: SystemAccount<'info>,
+    #[account(mut, address = listing.rent_payer @ AdspacesError::Unauthorized)]
+    pub rent_payer: SystemAccount<'info>,
     #[account(
         mut,
         seeds = [SPOT_SEED, listing.key().as_ref(), &[spot.index]],
@@ -124,7 +128,7 @@ pub fn handle_withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
         ctx.accounts.token_program.key(),
         token::CloseAccount {
             account: ctx.accounts.vault.to_account_info(),
-            destination: ctx.accounts.seller.to_account_info(),
+            destination: ctx.accounts.rent_payer.to_account_info(),
             authority: ctx.accounts.spot.to_account_info(),
         },
         signer_seeds,
@@ -140,8 +144,13 @@ pub fn handle_withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
         fee,
     });
 
-    ctx.accounts.proof.close(ctx.accounts.seller.to_account_info())?;
-    ctx.accounts.spot.close(ctx.accounts.seller.to_account_info())?;
+    ctx.accounts
+        .proof
+        .close(ctx.accounts.rent_payer.to_account_info())?;
+    ctx.accounts
+        .spot
+        .close(ctx.accounts.rent_payer.to_account_info())?;
+    record_spot_closed(&mut ctx.accounts.listing)?;
 
     Ok(())
 }
