@@ -49,4 +49,12 @@ fi
 
 source "$HOME/.nvm/nvm.sh"
 nvm use
-ANCHOR_PROVIDER_URL="$validator_url" ANCHOR_WALLET="$wallet" npm run test:anchor
+# Report the result explicitly: a TypeScript compile error or a failing test must fail this script,
+# and the last line says so even when only the tail of the output is read.
+status=0
+ANCHOR_PROVIDER_URL="$validator_url" ANCHOR_WALLET="$wallet" npm run test:anchor || status=$?
+if [[ "$status" -ne 0 ]]; then
+  echo "Anchor TypeScript tests failed (exit $status)" >&2
+  exit "$status"
+fi
+echo "Anchor TypeScript tests passed"
