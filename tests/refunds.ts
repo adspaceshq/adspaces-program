@@ -33,7 +33,11 @@ describe("funded spot refunds", () => {
     return Number(clock.data.readBigInt64LE(32));
   }
 
-  async function fundedSpot(deadlineOffset: number, deliveryOffset: number) {
+  async function fundedSpot(
+    deadlineOffset: number,
+    deliveryOffset: number,
+    rentPayer: anchor.web3.Keypair = wallet.payer,
+  ) {
     const { paymentMint } = await ensureConfig(program, provider);
     const buyer = anchor.web3.Keypair.generate();
     const caller = anchor.web3.Keypair.generate();
@@ -50,7 +54,8 @@ describe("funded spot refunds", () => {
       [Buffer.from("vault"), spot.toBuffer()],
       program.programId,
     );
-    for (const user of [buyer, caller]) {
+    const users = rentPayer === wallet.payer ? [buyer, caller] : [buyer, caller, rentPayer];
+    for (const user of users) {
       const signature = await provider.connection.requestAirdrop(
         user.publicKey,
         anchor.web3.LAMPORTS_PER_SOL,
@@ -92,17 +97,22 @@ describe("funded spot refunds", () => {
       .accountsStrict({
         seller: wallet.publicKey,
         reviewer: wallet.publicKey,
+        rentPayer: rentPayer.publicKey,
         listing,
         config,
         reviewAuthority,
         usdcMint: paymentMint,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
+      .signers([rentPayer])
       .rpc();
     await program.methods
       .addSpot(new anchor.BN(Number(price)))
       .accountsStrict({
         seller: wallet.publicKey,
+        rentPayer: rentPayer.publicKey,
+        reviewer: wallet.publicKey,
+        reviewAuthority,
         config,
         listing,
         spot,
@@ -112,6 +122,7 @@ describe("funded spot refunds", () => {
         tokenProgram: TOKEN_PROGRAM_ID,
         rent: anchor.web3.SYSVAR_RENT_PUBKEY,
       })
+      .signers([rentPayer])
       .rpc();
     await program.methods
       .claimSpot()
@@ -127,7 +138,7 @@ describe("funded spot refunds", () => {
       })
       .signers([buyer])
       .rpc();
-    return { buyerAta, caller, deliveryDeadline, listing, paymentMint, spot, vault };
+    return { buyerAta, caller, deliveryDeadline, listing, paymentMint, rentPayer, spot, vault };
   }
 
   it("lets the seller cancel a funded spot with a full buyer refund", async () => {
@@ -138,34 +149,45 @@ describe("funded spot refunds", () => {
       .accountsStrict({
         caller: wallet.publicKey,
         listing,
-        seller: wallet.publicKey,
+        rentPayer: wallet.publicKey,
         spot,
         vault,
         buyerAta,
         usdcMint: paymentMint,
         tokenProgram: TOKEN_PROGRAM_ID,
+        proof: null,
       })
       .rpc();
     expect((await getAccount(provider.connection, buyerAta)).amount).to.equal(price);
     expect(await provider.connection.getAccountInfo(spot)).to.equal(null);
     expect(await provider.connection.getAccountInfo(vault)).to.equal(null);
+
+    // Every spot is closed, so the rent payer can close the listing and take its rent back.
+    await program.methods
+      .closeListing()
+      .accountsStrict({ rentPayer: wallet.publicKey, listing })
+      .rpc();
+    expect(await provider.connection.getAccountInfo(listing)).to.equal(null);
   });
 
   it("lets anyone refund a missing proof only after the delivery deadline", async () => {
-    const { buyerAta, caller, deliveryDeadline, listing, paymentMint, spot, vault } =
-      await fundedSpot(2, 4);
+    // A rent payer apart from the seller shows the rent goes to it, not the seller. It is also exact:
+    // the provider wallet is the local validator's mint, too large for exact lamport math in a number.
+    const { buyerAta, caller, deliveryDeadline, listing, paymentMint, rentPayer, spot, vault } =
+      await fundedSpot(8, 12, anchor.web3.Keypair.generate());
     const refund = () =>
       program.methods
         .refundSpot()
         .accountsStrict({
           caller: caller.publicKey,
           listing,
-          seller: wallet.publicKey,
+          rentPayer: rentPayer.publicKey,
           spot,
           vault,
           buyerAta,
           usdcMint: paymentMint,
           tokenProgram: TOKEN_PROGRAM_ID,
+          proof: null,
         })
         .signers([caller])
         .rpc();
@@ -192,7 +214,13 @@ describe("funded spot refunds", () => {
       );
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
+    const rent =
+      (await provider.connection.getBalance(spot)) + (await provider.connection.getBalance(vault));
+    const rentPayerBefore = await provider.connection.getBalance(rentPayer.publicKey);
     await refund();
+    expect((await provider.connection.getBalance(rentPayer.publicKey)) - rentPayerBefore).to.equal(
+      rent,
+    );
     expect((await getAccount(provider.connection, buyerAta)).amount).to.equal(price);
     expect(await provider.connection.getAccountInfo(spot)).to.equal(null);
     expect(await provider.connection.getAccountInfo(vault)).to.equal(null);

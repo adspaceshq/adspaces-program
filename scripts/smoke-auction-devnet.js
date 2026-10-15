@@ -96,6 +96,7 @@ async function main() {
     .accountsStrict({
       seller: seller.publicKey,
       reviewer: seller.publicKey,
+      rentPayer: seller.publicKey,
       listing,
       config,
       reviewAuthority,
@@ -107,6 +108,7 @@ async function main() {
     .addSpot(new anchor.BN(OPENING_BID.toString()))
     .accountsStrict({
       seller: seller.publicKey,
+      rentPayer: seller.publicKey,
       config,
       listing,
       spot,
@@ -169,7 +171,7 @@ async function main() {
     .accountsStrict({
       caller: seller.publicKey,
       listing,
-      seller: seller.publicKey,
+      rentPayer: seller.publicKey,
       spot,
       vault,
       buyerAta: bobAta,

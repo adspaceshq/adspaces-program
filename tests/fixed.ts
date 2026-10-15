@@ -86,6 +86,7 @@ describe("fixed-price spots", () => {
       .accountsStrict({
         seller: wallet.publicKey,
         reviewer: wallet.publicKey,
+        rentPayer: wallet.publicKey,
         listing,
         config,
         reviewAuthority,
@@ -98,6 +99,9 @@ describe("fixed-price spots", () => {
       .addSpot(price)
       .accountsStrict({
         seller: wallet.publicKey,
+        rentPayer: wallet.publicKey,
+        reviewer: wallet.publicKey,
+        reviewAuthority,
         config,
         listing,
         spot,

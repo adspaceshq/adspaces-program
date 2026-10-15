@@ -117,6 +117,7 @@ describe("spot settlement", () => {
       .accountsStrict({
         seller: wallet.publicKey,
         reviewer: wallet.publicKey,
+        rentPayer: wallet.publicKey,
         listing,
         config,
         reviewAuthority,
@@ -128,6 +129,9 @@ describe("spot settlement", () => {
       .addSpot(price)
       .accountsStrict({
         seller: wallet.publicKey,
+        rentPayer: wallet.publicKey,
+        reviewer: wallet.publicKey,
+        reviewAuthority,
         config,
         listing,
         spot,
@@ -175,6 +179,7 @@ describe("spot settlement", () => {
         caller: caller.publicKey,
         listing,
         seller: wallet.publicKey,
+        rentPayer: wallet.publicKey,
         spot,
         proof,
         vault,
