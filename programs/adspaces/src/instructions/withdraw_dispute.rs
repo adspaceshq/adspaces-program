@@ -34,12 +34,8 @@ pub struct WithdrawDispute<'info> {
         constraint = dispute.decided_at == 0 @ AdspacesError::Unauthorized,
     )]
     pub dispute: Account<'info, DisputeRecord>,
-    /// Gets the dispute's rent back: the platform account that paid it.
-    #[account(
-        mut,
-        address = dispute.rent_payer @ AdspacesError::Unauthorized,
-        constraint = rent_payer.key() == listing.rent_payer @ AdspacesError::Unauthorized,
-    )]
+    /// Gets the dispute's rent back: whoever paid it (the listing's rent payer or the buyer).
+    #[account(mut, address = dispute.rent_payer @ AdspacesError::Unauthorized)]
     pub rent_payer: SystemAccount<'info>,
 }
 

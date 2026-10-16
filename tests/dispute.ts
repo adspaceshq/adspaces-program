@@ -49,6 +49,9 @@ describe("dispute lifecycle", () => {
     [Buffer.from("dispute"), spot.toBuffer()],
     program.programId,
   );
+  // scripts/test-program.sh runs this suite on the devnet-short-review build, whose minimum proof
+  // window (delivery_deadline - artwork_close) is 60 s instead of 1 h.
+  const minProofWindowSeconds = 60;
 
   async function validatorTime(): Promise<number> {
     const clock = await provider.connection.getAccountInfo(anchor.web3.SYSVAR_CLOCK_PUBKEY);
@@ -57,7 +60,7 @@ describe("dispute lifecycle", () => {
   }
 
   async function waitUntil(timestamp: number): Promise<void> {
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + 120_000;
     while ((await validatorTime()) < timestamp) {
       if (Date.now() > deadline) throw new Error("Validator clock did not advance");
       await provider.sendAndConfirm(
@@ -83,7 +86,7 @@ describe("dispute lifecycle", () => {
     expect(rejected).to.equal(true);
   }
 
-  it("stores proof and evidence, then splits escrow by the resolver decision", async () => {
+  it("stores proof and a buyer-paid dispute, then splits escrow and returns the dispute rent", async () => {
     const { paymentMint, treasury } = await ensureConfig(program, provider);
     const airdrop = await provider.connection.requestAirdrop(
       buyer.publicKey,
@@ -124,7 +127,7 @@ describe("dispute lifecycle", () => {
 
     const now = await validatorTime();
     const auctionEnd = now + 8;
-    const deliveryEnd = now + 14;
+    const deliveryEnd = auctionEnd + minProofWindowSeconds;
     await program.methods
       .createListing(
         slugHash,
@@ -200,6 +203,7 @@ describe("dispute lifecycle", () => {
     expect(storedProof.spot.equals(spot)).to.equal(true);
     expect(storedProof.proofUri).to.equal("ipfs://adspaces-validator-proof");
 
+    // Proof exists, so the buyer can pay the dispute rent itself, without the platform co-signing.
     const raiseDispute = (hash: number[], uri: string) =>
       program.methods
         .raiseDispute(hash, uri)
@@ -208,7 +212,7 @@ describe("dispute lifecycle", () => {
           config,
           listing,
           spot,
-          rentPayer: wallet.publicKey,
+          rentPayer: buyer.publicKey,
           dispute,
           systemProgram: anchor.web3.SystemProgram.programId,
         })
@@ -228,6 +232,7 @@ describe("dispute lifecycle", () => {
     expect(openedDispute.buyer.equals(buyer.publicKey)).to.equal(true);
     expect(openedDispute.evidenceUri).to.equal("ipfs://adspaces-validator-evidence");
     expect(openedDispute.proofSubmitted).to.equal(true);
+    expect(openedDispute.rentPayer.equals(buyer.publicKey)).to.equal(true);
     expect((await program.account.spot.fetch(spot)).status).to.equal(4);
 
     const sellerBefore = (await getAccount(provider.connection, sellerAta)).amount;
@@ -238,6 +243,7 @@ describe("dispute lifecycle", () => {
         .accountsStrict({
           resolver: wallet.publicKey,
           rentPayer: wallet.publicKey,
+          disputeRentPayer: buyer.publicKey,
           config,
           listing,
           spot,
@@ -254,7 +260,13 @@ describe("dispute lifecycle", () => {
         .rpc();
     await expectRejected(() => resolveDispute(Array(32).fill(0), ""));
     expect((await getAccount(provider.connection, vault)).amount).to.equal(price);
+    const disputeRent = await provider.connection.getBalance(dispute);
+    const buyerLamportsBefore = await provider.connection.getBalance(buyer.publicKey);
     await resolveDispute(Array(32).fill(3), "ipfs://adspaces-validator-decision");
+    // The buyer paid no fee here, so its SOL moved by exactly the dispute rent it paid.
+    expect((await provider.connection.getBalance(buyer.publicKey)) - buyerLamportsBefore).to.equal(
+      disputeRent,
+    );
 
     const feeBps = (await program.account.listing.fetch(listing)).feeBps;
     const sellerGross = price / 2n;
@@ -343,7 +355,7 @@ describe("dispute lifecycle", () => {
     ).address;
 
     const now = await validatorTime();
-    const deliveryEnd = now + 12;
+    const deliveryEnd = now + 8 + minProofWindowSeconds;
     await program.methods
       .createListing(
         auctionSlug,
@@ -465,6 +477,7 @@ describe("dispute lifecycle", () => {
       .accountsStrict({
         resolver: wallet.publicKey,
         rentPayer: wallet.publicKey,
+        disputeRentPayer: wallet.publicKey,
         config,
         listing: auctionListing,
         spot: auctionSpot,

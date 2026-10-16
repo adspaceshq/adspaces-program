@@ -9,9 +9,11 @@
 //!   which never changes.
 //! - A failed transaction moves no tokens; a successful one moves exactly the expected amounts
 //!   (in particular an outbid bidder gets exactly their bid back).
-//! - Rent is conserved: the listing's rent payer plus every listing, spot, vault, proof and dispute
-//!   account always hold the same lamports, so every closed account's rent went to the rent payer.
-//!   No seller or buyer ever gains lamports.
+//! - Rent is conserved: the listing's rent payer plus every listing, spot, vault, proof and
+//!   platform-paid dispute account always hold the same lamports, so every closed account's rent
+//!   went to the rent payer. A buyer may pay a proof-bearing dispute's rent itself; that rent
+//!   returns to the buyer and never to the platform. After a successful step every actor's SOL moved
+//!   by exactly its transaction fee plus that dispute rent, so no seller or buyer gains anything else.
 //! - Each listing's spot_count / closed_spot_count match the spots added and closed. At the end the
 //!   rent payer closes the open spots, and close_listing succeeds exactly for listings whose spots
 //!   are all closed, and only for the rent payer.
@@ -30,6 +32,7 @@ use litesvm::LiteSVM;
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 use spl_token_interface::state;
+use std::cell::Cell;
 
 use adspaces::constants::*;
 use common::*;
@@ -83,6 +86,8 @@ struct SpotModel {
     /// Tokens sent straight to the vault outside the program.
     donations: u64,
     closed: bool,
+    /// Actor that paid the open dispute's rent itself (buyer-paid path); None when the platform did.
+    dispute_payer: Option<usize>,
 }
 
 fn balance(svm: &LiteSVM, account: &Pubkey) -> Option<u64> {
@@ -91,11 +96,22 @@ fn balance(svm: &LiteSVM, account: &Pubkey) -> Option<u64> {
         .map(|a| state::Account::unpack(&a.data).unwrap().amount)
 }
 
+thread_local! {
+    /// Fee payer and fee of the last successful `exec`.
+    static LAST_FEE: Cell<(Pubkey, u64)> = const { Cell::new((Pubkey::new_from_array([0; 32]), 0)) };
+}
+
 fn exec(svm: &mut LiteSVM, ix: Instruction, payer: &Keypair, extra: &[&Keypair]) -> bool {
     // A fresh blockhash per transaction, so repeating an identical instruction is never
     // rejected as a duplicate.
     svm.expire_blockhash();
-    send(svm, &[ix], payer, extra).is_ok()
+    match send(svm, &[ix], payer, extra) {
+        Ok(meta) => {
+            LAST_FEE.with(|fee| fee.set((payer.pubkey(), meta.fee)));
+            true
+        }
+        Err(_) => false,
+    }
 }
 
 struct Case {
@@ -192,7 +208,13 @@ impl Case {
         let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
         let now = self.env.clock().unix_timestamp;
         let deadline = now + self.rng.range(3_600, 3 * 86_400) as i64;
-        let delivery_deadline = deadline + self.rng.range(60, 3 * 86_400) as i64;
+        let artwork_close = if self.rng.chance(50) {
+            deadline
+        } else {
+            deadline + self.rng.range(1, 86_400) as i64
+        };
+        let delivery_deadline =
+            artwork_close + self.rng.range(MIN_PROOF_WINDOW_SECONDS as u64, 3 * 86_400) as i64;
         let review = self.rng.range(MIN_REVIEW_WINDOW_SECONDS as u64, 3 * 86_400) as i64;
         let fee_bps = self.rng.range(250, 1_000) as u16;
         let (double_up, min_increment, uplift_fee_bps, max_fee_bps) = if mode == MODE_FIXED {
@@ -215,7 +237,7 @@ impl Case {
                 metadata_uri: "https://adspaces.test/api/listings/property".to_string(),
                 mode,
                 deadline,
-                artwork_close: deadline,
+                artwork_close,
                 delivery_deadline,
                 review_window_seconds: review,
                 min_increment,
@@ -289,6 +311,7 @@ impl Case {
                 escrow: 0,
                 donations: 0,
                 closed: false,
+                dispute_payer: None,
             });
         }
         ok
@@ -361,8 +384,8 @@ impl Case {
             .collect()
     }
 
-    /// Rent payer lamports plus the lamports of every listing, spot, vault, proof and dispute
-    /// account (closed accounts count as 0).
+    /// Rent payer lamports plus the lamports of every listing, spot, vault, proof and platform-paid
+    /// dispute account (closed accounts count as 0). A buyer-paid dispute's rent is the buyer's.
     fn rent_pool(&self) -> u64 {
         let svm = &self.env.svm;
         let funded: u64 = self
@@ -370,13 +393,15 @@ impl Case {
             .iter()
             .map(|l| lamports(svm, l))
             .chain(self.spots.iter().flat_map(|m| {
-                [
-                    m.spot,
-                    m.vault,
-                    proof_pda(&m.spot).0,
-                    dispute_pda(&m.spot).0,
-                ]
-                .map(|a| lamports(svm, &a))
+                let dispute = if m.dispute_payer.is_none() {
+                    lamports(svm, &dispute_pda(&m.spot).0)
+                } else {
+                    0
+                };
+                [m.spot, m.vault, proof_pda(&m.spot).0]
+                    .map(|a| lamports(svm, &a))
+                    .into_iter()
+                    .chain([dispute])
             }))
             .sum();
         lamports(svm, &self.env.rent_payer()) + funded
@@ -421,6 +446,16 @@ impl Case {
         let vault_before = before[Self::vault_slot(s)].unwrap_or(0);
         let pre_spot = self.chain_spot(s);
         let pre_listing = self.listing_of(s);
+        let (dispute, _) = dispute_pda(&self.spots[s].spot);
+        let pre_dispute_lamports = lamports(&self.env.svm, &dispute);
+        let pre_timeout_at = self
+            .env
+            .svm
+            .get_account(&dispute)
+            .map(|_| read_dispute(&self.env.svm, &dispute))
+            .map(|d| d.opened_at + d.timeout_seconds);
+        let pre_dispute_payer = self.spots[s].dispute_payer;
+        LAST_FEE.with(|fee| fee.set((Pubkey::default(), 0)));
         let now = self.env.clock().unix_timestamp;
         let roll = self.rng.below(100);
 
@@ -457,17 +492,51 @@ impl Case {
         after.truncate(before.len()); // A newly added spot's empty vault is checked below.
         if ok {
             self.expect_deltas(&before, &after, &expected);
-            self.check_success_preconditions(&description, s, pre_spot.as_ref(), &pre_listing, now);
+            self.check_success_preconditions(
+                &description,
+                s,
+                pre_spot.as_ref(),
+                &pre_listing,
+                pre_timeout_at,
+                now,
+            );
         } else if after != before {
             self.fail(format!(
                 "failed transaction moved tokens: {before:?} -> {after:?}"
             ));
         }
-        // Rent never lands on the seller or a buyer: their SOL only ever goes down (fees).
+        // Rent never lands on the seller or a buyer, except a buyer-paid dispute's rent coming back
+        // to that buyer: on success each actor's SOL moves by exactly its fee and that rent.
         let lamports_after = self.actor_lamports();
+        let mut rent_delta = vec![0i128; self.actors.len()];
+        if ok {
+            match (pre_dispute_payer, self.spots[s].dispute_payer) {
+                (None, Some(payer)) => {
+                    rent_delta[payer] -= lamports(&self.env.svm, &dispute) as i128;
+                }
+                (Some(payer), None) => rent_delta[payer] += pre_dispute_lamports as i128,
+                _ => {}
+            }
+        }
+        let (fee_payer, fee) = LAST_FEE.with(|fee| fee.get());
         for (i, (b, a)) in lamports_before.iter().zip(&lamports_after).enumerate() {
-            if a > b {
-                self.fail(format!("actor {i} gained {} lamports", a - b));
+            let actual = *a as i128 - *b as i128;
+            if ok {
+                let paid = if self.actors[i].pubkey() == fee_payer {
+                    fee as i128
+                } else {
+                    0
+                };
+                if actual != rent_delta[i] - paid {
+                    self.fail(format!(
+                        "actor {i} SOL moved by {actual}, expected rent {} minus fee {paid}",
+                        rent_delta[i]
+                    ));
+                }
+            } else if actual > 0 {
+                self.fail(format!(
+                    "actor {i} gained {actual} lamports in a failed step"
+                ));
             }
         }
         self.check_invariants();
@@ -480,6 +549,7 @@ impl Case {
         s: usize,
         pre_spot: Option<&adspaces::state::Spot>,
         listing: &adspaces::state::Listing,
+        timeout_at: Option<i64>,
         now: i64,
     ) {
         let review_end = listing.delivery_deadline + listing.review_window_seconds;
@@ -493,18 +563,20 @@ impl Case {
                 && listing.mode == MODE_AUCTION
         } else if description.starts_with("submit_proof") {
             status == Some(SPOT_FUNDED)
-                && now >= listing.deadline
+                && now >= listing.artwork_close
                 && now < listing.delivery_deadline
                 && description == format!("submit_proof(actor {SELLER}, {PLATFORM})")
         } else if description.starts_with("raise_dispute") {
             status == Some(SPOT_FUNDED)
                 && now >= listing.delivery_deadline
                 && (!proof || now < review_end)
-        } else if description.starts_with("withdraw_dispute")
-            || description.starts_with("resolve")
-            || description.starts_with("timeout")
-        {
+                && (proof || !description.contains("buyer-paid"))
+        } else if description.starts_with("withdraw_dispute") {
             status == Some(SPOT_DISPUTED)
+        } else if description.starts_with("resolve") {
+            status == Some(SPOT_DISPUTED) && timeout_at.is_some_and(|t| now < t)
+        } else if description.starts_with("timeout") {
+            status == Some(SPOT_DISPUTED) && timeout_at.is_some_and(|t| now >= t)
         } else if description.starts_with("refund(third party") {
             status == Some(SPOT_FUNDED) && now >= listing.delivery_deadline && !proof
         } else if description.starts_with("refund") {
@@ -730,6 +802,9 @@ impl Case {
             if amount < minimum {
                 self.fail(format!("bid {amount} accepted below minimum {minimum}"));
             }
+            if prev_actor == Some(a) {
+                self.fail(format!("actor {a} outbid itself"));
+            }
             self.spots[s].escrow = amount;
         }
         (
@@ -781,6 +856,7 @@ impl Case {
                 let mut marks = vec![
                     listing.deadline - self.rng.range(0, SNIPE_WINDOW_SECONDS as u64) as i64,
                     listing.deadline,
+                    listing.artwork_close,
                     listing.delivery_deadline,
                     listing.delivery_deadline + listing.review_window_seconds,
                 ];
@@ -854,8 +930,15 @@ impl Case {
                 "evidence",
             ),
         };
+        // Usually the platform co-signs and pays the rent; sometimes the buyer pays it instead.
+        let buyer_paid = self.rng.chance(30);
         let m = &self.spots[s];
         let (dispute, _) = dispute_pda(&m.spot);
+        let rent_payer = if buyer_paid {
+            self.actors[a].pubkey()
+        } else {
+            self.env.mint_authority.pubkey()
+        };
         let ix = new_ix(
             program_id(),
             adspaces::instruction::RaiseDispute {
@@ -865,7 +948,7 @@ impl Case {
             .data(),
             adspaces::accounts::RaiseDispute {
                 buyer: self.actors[a].pubkey(),
-                rent_payer: self.env.mint_authority.pubkey(),
+                rent_payer,
                 config: self.env.config,
                 listing: self.listings[m.listing],
                 spot: m.spot,
@@ -874,13 +957,21 @@ impl Case {
             }
             .to_account_metas(None),
         );
-        let ok = exec(
-            &mut self.env.svm,
-            ix,
-            &self.actors[a],
-            &[&self.env.mint_authority],
-        );
-        (format!("raise_dispute(actor {a}, {kind})"), ok, vec![])
+        let co_signers: Vec<&Keypair> = if buyer_paid {
+            vec![]
+        } else {
+            vec![&self.env.mint_authority]
+        };
+        let ok = exec(&mut self.env.svm, ix, &self.actors[a], &co_signers);
+        if ok && buyer_paid {
+            self.spots[s].dispute_payer = Some(a);
+        }
+        let payer = if buyer_paid { "buyer-paid" } else { PLATFORM };
+        (
+            format!("raise_dispute(actor {a}, {kind}, {payer})"),
+            ok,
+            vec![],
+        )
     }
 
     fn withdraw_dispute(&mut self, s: usize) -> (String, bool, Vec<(usize, i128)>) {
@@ -901,6 +992,9 @@ impl Case {
             .to_account_metas(None),
         );
         let ok = exec(&mut self.env.svm, ix, &self.actors[a], &[]);
+        if ok {
+            self.spots[s].dispute_payer = None;
+        }
         (format!("withdraw_dispute(actor {a})"), ok, vec![])
     }
 
@@ -912,7 +1006,7 @@ impl Case {
             _ => self.rng.range(0, 10_000) as u16,
         };
         let b = self.likely_winner(s);
-        let rent_payer = self.dispute_rent_payer(s);
+        let dispute_rent_payer = self.dispute_rent_payer(s);
         let proof = self.proof_account(s);
         let fee = match self.chain_spot(s) {
             Some(spot) if bps <= 10_000 => {
@@ -937,7 +1031,8 @@ impl Case {
                 listing: self.listings[m.listing],
                 spot: m.spot,
                 dispute,
-                rent_payer,
+                rent_payer: self.env.rent_payer(),
+                dispute_rent_payer,
                 vault: m.vault,
                 seller_ata: self.accounts[SELLER],
                 seller: self.actors[SELLER].pubkey(),
@@ -966,6 +1061,7 @@ impl Case {
         ];
         if ok {
             self.spots[s].closed = true;
+            self.spots[s].dispute_payer = None;
         }
         (format!("resolve(bps {bps}, buyer actor {b})"), ok, expected)
     }
@@ -973,7 +1069,7 @@ impl Case {
     fn timeout(&mut self, s: usize, vault_before: u64) -> (String, bool, Vec<(usize, i128)>) {
         let caller = self.random_actor();
         let b = self.likely_winner(s);
-        let rent_payer = self.dispute_rent_payer(s);
+        let dispute_rent_payer = self.dispute_rent_payer(s);
         let proof = self.proof_account(s);
         let m = &self.spots[s];
         let (dispute, _) = dispute_pda(&m.spot);
@@ -986,7 +1082,8 @@ impl Case {
                 listing: self.listings[m.listing],
                 spot: m.spot,
                 dispute,
-                rent_payer,
+                rent_payer: self.env.rent_payer(),
+                dispute_rent_payer,
                 proof,
                 vault: m.vault,
                 buyer_ata: self.accounts[b],
@@ -998,6 +1095,7 @@ impl Case {
         let ok = exec(&mut self.env.svm, ix, &self.actors[caller], &[]);
         if ok {
             self.spots[s].closed = true;
+            self.spots[s].dispute_payer = None;
         }
         (
             format!("timeout(caller {caller}, buyer actor {b})"),

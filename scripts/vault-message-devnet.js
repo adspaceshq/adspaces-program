@@ -226,7 +226,9 @@ async function buildAction(command, args, ctx, connection, program, idl) {
       if (!reviewer) throw new Error("Review authority is not initialized");
       if (reviewer.authority.equals(next)) console.log(`Note: reviewer is already ${next}; the program rejects an unchanged reviewer.`);
       return {
-        description: `update_review_authority: reviewer ${reviewer.authority} -> ${next}.`,
+        // The reviewer key is also the only accepted rent payer for new listings; existing listings keep
+        // theirs, so the old key must stay funded and online until they close.
+        description: `update_review_authority: reviewer ${reviewer.authority} -> ${next} (also the rent payer for new listings; the old key keeps paying and receiving rent for existing ones).`,
         instruction: await methods
           .updateReviewAuthority(next)
           .accountsStrict({ authority: vault, config, reviewAuthority })

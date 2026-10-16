@@ -19,16 +19,27 @@ fi
 bash "$script_dir/build-program.sh"
 ledger="$(mktemp -d /tmp/adspaces-validator.XXXXXX)"
 readonly ledger
-solana-test-validator --quiet --ledger "$ledger" \
-  --upgradeable-program 8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5 \
-  target/deploy/adspaces.so "$wallet" &
-validator_pid=$!
+# These tests wait on the validator's real clock, and a listing needs at least
+# MIN_PROOF_WINDOW_SECONDS between artwork close and delivery (1 h in the audited build). So the
+# suite runs the devnet-short-review build (60 s), built outside target/deploy, which keeps the
+# audited binary. The IDL and types come from the audited build above.
+short_review_dir="$ledger-program"
+readonly short_review_dir
+validator_pid=""
 cleanup() {
-  kill "$validator_pid" 2>/dev/null || true
-  wait "$validator_pid" 2>/dev/null || true
-  rm -rf -- "$ledger"
+  if [[ -n "$validator_pid" ]]; then
+    kill "$validator_pid" 2>/dev/null || true
+    wait "$validator_pid" 2>/dev/null || true
+  fi
+  rm -rf -- "$ledger" "$short_review_dir"
 }
 trap cleanup EXIT
+cargo build-sbf --manifest-path programs/adspaces/Cargo.toml --arch v3 \
+  --features devnet-short-review --sbf-out-dir "$short_review_dir"
+solana-test-validator --quiet --ledger "$ledger" \
+  --upgradeable-program 8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5 \
+  "$short_review_dir/adspaces.so" "$wallet" &
+validator_pid=$!
 
 ready=0
 for ((attempt = 0; attempt < 60; attempt++)); do

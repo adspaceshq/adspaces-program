@@ -26,8 +26,12 @@ pub struct RaiseDispute<'info> {
         constraint = spot.status == SPOT_FUNDED @ AdspacesError::SpotNotFunded,
     )]
     pub spot: Account<'info, Spot>,
-    /// The listing's rent payer funds the dispute's rent, so buyers never need SOL. Co-signs the raise.
-    #[account(mut, address = listing.rent_payer @ AdspacesError::Unauthorized)]
+    /// Funds the dispute's rent and gets it back. Normally the listing's rent payer, so buyers never
+    /// need SOL; once proof exists the buyer may pay it instead, so no co-signature can block the dispute.
+    #[account(
+        mut,
+        constraint = rent_payer.key() == listing.rent_payer || rent_payer.key() == buyer.key() @ AdspacesError::Unauthorized,
+    )]
     pub rent_payer: Signer<'info>,
     #[account(
         init,
@@ -56,6 +60,11 @@ pub fn handle_raise_dispute(
         AdspacesError::NotWinningBuyer
     );
     let now = Clock::get()?.unix_timestamp;
+    // Buyer-paid disputes only for proof-bearing spots: those are time-boxed by the review window, so a
+    // buyer cannot keep a proofless spot open with raise and withdraw cycles the platform never approved.
+    if ctx.accounts.rent_payer.key() != ctx.accounts.listing.rent_payer {
+        require!(spot.proof_submitted_at > 0, AdspacesError::ProofRequired);
+    }
     require!(
         now >= ctx.accounts.listing.delivery_deadline,
         AdspacesError::DeliveryDeadlinePending

@@ -36,13 +36,14 @@ pub struct TimeoutDispute<'info> {
         constraint = dispute.decided_at == 0 @ AdspacesError::Unauthorized,
     )]
     pub dispute: Box<Account<'info, DisputeRecord>>,
-    /// Gets the rent back for the dispute, spot, vault and proof: the platform account that paid it.
-    #[account(
-        mut,
-        address = dispute.rent_payer @ AdspacesError::Unauthorized,
-        constraint = rent_payer.key() == listing.rent_payer @ AdspacesError::Unauthorized,
-    )]
+    /// Gets the rent back for the spot, vault and proof: the platform account that paid it.
+    #[account(mut, address = listing.rent_payer @ AdspacesError::Unauthorized)]
     pub rent_payer: SystemAccount<'info>,
+    /// CHECK: only compared by key and credited lamports. Gets the dispute's rent back: whoever paid it
+    /// (usually the same key as rent_payer, or the buyer). Any owner is accepted, so a payer key that
+    /// later changes owner cannot block the resolution or the timeout.
+    #[account(mut, address = dispute.rent_payer @ AdspacesError::Unauthorized)]
+    pub dispute_rent_payer: UncheckedAccount<'info>,
     #[account(
         mut,
         seeds = [PROOF_SEED, spot.key().as_ref()],
@@ -126,7 +127,7 @@ pub fn handle_timeout_dispute(ctx: Context<TimeoutDispute>) -> Result<()> {
     }
     ctx.accounts
         .dispute
-        .close(ctx.accounts.rent_payer.to_account_info())?;
+        .close(ctx.accounts.dispute_rent_payer.to_account_info())?;
     ctx.accounts
         .spot
         .close(ctx.accounts.rent_payer.to_account_info())?;

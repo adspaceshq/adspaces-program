@@ -100,4 +100,12 @@ pub enum AdspacesError {
     InvalidPauseGuardian,
     #[msg("The spot has a proof record; pass it so it closes with the spot.")]
     ProofAccountRequired,
+    #[msg("Only the review authority can pay a listing's rent.")]
+    InvalidRentPayer,
+    #[msg("Artwork window is still open; proof is accepted from artwork close.")]
+    ArtworkWindowOpen,
+    #[msg("Dispute timeout has passed; only the timeout refund remains.")]
+    DisputeTimeoutPassed,
+    #[msg("The current top bidder cannot outbid itself.")]
+    SelfOutbid,
 }

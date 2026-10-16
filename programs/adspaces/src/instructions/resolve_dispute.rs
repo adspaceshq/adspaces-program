@@ -40,13 +40,14 @@ pub struct ResolveDispute<'info> {
         constraint = dispute.spot == spot.key() @ AdspacesError::Unauthorized,
     )]
     pub dispute: Box<Account<'info, DisputeRecord>>,
-    /// Gets the rent back for the dispute, spot, vault and proof: the platform account that paid it.
-    #[account(
-        mut,
-        address = dispute.rent_payer @ AdspacesError::Unauthorized,
-        constraint = rent_payer.key() == listing.rent_payer @ AdspacesError::Unauthorized,
-    )]
+    /// Gets the rent back for the spot, vault and proof: the platform account that paid it.
+    #[account(mut, address = listing.rent_payer @ AdspacesError::Unauthorized)]
     pub rent_payer: SystemAccount<'info>,
+    /// CHECK: only compared by key and credited lamports. Gets the dispute's rent back: whoever paid it
+    /// (usually the same key as rent_payer, or the buyer). Any owner is accepted, so a payer key that
+    /// later changes owner cannot block the resolution or the timeout.
+    #[account(mut, address = dispute.rent_payer @ AdspacesError::Unauthorized)]
+    pub dispute_rent_payer: UncheckedAccount<'info>,
     #[account(
         mut,
         constraint = vault.key() == spot.vault @ AdspacesError::Unauthorized,
@@ -56,8 +57,10 @@ pub struct ResolveDispute<'info> {
     pub vault: Box<Account<'info, TokenAccount>>,
     #[account(mut, token::mint = usdc_mint, token::authority = seller)]
     pub seller_ata: Box<Account<'info, TokenAccount>>,
+    /// CHECK: only compared by key and used as the seller_ata authority; any owner is accepted so a
+    /// program-owned seller key can still be paid.
     #[account(address = listing.seller @ AdspacesError::Unauthorized)]
-    pub seller: SystemAccount<'info>,
+    pub seller: UncheckedAccount<'info>,
     #[account(
         mut,
         constraint = buyer_ata.owner == if listing.mode == MODE_FIXED { spot.buyer } else { spot.current_bidder } @ AdspacesError::NotWinningBuyer,
@@ -89,6 +92,15 @@ pub fn handle_resolve_dispute(
     decision_uri: String,
 ) -> Result<()> {
     require_proof_account(&ctx.accounts.spot, ctx.accounts.proof.is_some())?;
+    // Once the timeout has matured the buyer is owed the full refund; a late resolution cannot override it.
+    let now = Clock::get()?.unix_timestamp;
+    let timeout_at = ctx
+        .accounts
+        .dispute
+        .opened_at
+        .checked_add(ctx.accounts.dispute.timeout_seconds)
+        .ok_or(AdspacesError::MathOverflow)?;
+    require!(now < timeout_at, AdspacesError::DisputeTimeoutPassed);
     require!(seller_share_bps <= 10_000, AdspacesError::InvalidFeeBps);
     require!(
         decision_hash != [0; 32]
@@ -148,7 +160,7 @@ pub fn handle_resolve_dispute(
     let dispute = &mut ctx.accounts.dispute;
     dispute.decision_hash = decision_hash;
     dispute.decision_uri = decision_uri;
-    dispute.decided_at = Clock::get()?.unix_timestamp;
+    dispute.decided_at = now;
     dispute.seller_share_bps = seller_share_bps;
     dispute.buyer_refund = buyer_refund;
     dispute.seller_amount = seller_net;
@@ -166,6 +178,7 @@ pub fn handle_resolve_dispute(
         buyer_refund,
         seller_amount: seller_net,
         fee,
+        treasury_ata: ctx.accounts.treasury_ata.key(),
     });
 
     if let Some(ref proof) = ctx.accounts.proof {
@@ -173,7 +186,7 @@ pub fn handle_resolve_dispute(
     }
     ctx.accounts
         .dispute
-        .close(ctx.accounts.rent_payer.to_account_info())?;
+        .close(ctx.accounts.dispute_rent_payer.to_account_info())?;
     ctx.accounts
         .spot
         .close(ctx.accounts.rent_payer.to_account_info())?;

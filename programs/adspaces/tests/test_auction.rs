@@ -400,6 +400,7 @@ fn only_final_bidder_can_dispute_and_receive_full_refund() {
             spot,
             dispute: dispute_record,
             rent_payer: read_dispute(&env.svm, &dispute_record).rent_payer,
+            dispute_rent_payer: read_dispute(&env.svm, &dispute_record).rent_payer,
             vault,
             seller_ata,
             seller: seller.pubkey(),
@@ -535,4 +536,89 @@ fn listing_with_artwork_close_at_deadline_never_extends() {
     )
     .unwrap();
     assert_eq!(read_listing(&env.svm, &listing).deadline, before.deadline);
+}
+
+#[test]
+fn standing_bidder_cannot_outbid_itself() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    // Bidding closes inside the snipe window, so a self-raise would otherwise extend the deadline.
+    let listing = create_auction_listing_timed(
+        &mut env,
+        &seller,
+        [19u8; 16],
+        INCREMENT,
+        false,
+        60,
+        3_600,
+        3 * 3_600,
+    );
+    let (spot, vault) = spot_and_vault(&listing);
+    let (alice, alice_ata) = env.new_user(1_000_000_000);
+    let (bob, bob_ata) = env.new_user(1_000_000_000);
+
+    bid(
+        &mut env, &alice, &alice_ata, &listing, &spot, &vault, None, START,
+    )
+    .unwrap();
+    let deadline = read_listing(&env.svm, &listing).deadline;
+    // Refunding into the paying account is already a duplicate mutable account; a second token
+    // account of the same wallet reaches the self-outbid check.
+    env.svm.expire_blockhash();
+    assert!(bid(
+        &mut env,
+        &alice,
+        &alice_ata,
+        &listing,
+        &spot,
+        &vault,
+        Some(alice_ata),
+        START + INCREMENT,
+    )
+    .is_err());
+    let alice_second_ata = empty_token_account(&mut env, &alice, &alice.pubkey());
+    assert_program_error(
+        bid(
+            &mut env,
+            &alice,
+            &alice_ata,
+            &listing,
+            &spot,
+            &vault,
+            Some(alice_second_ata),
+            START + INCREMENT,
+        ),
+        adspaces::error::AdspacesError::SelfOutbid,
+    );
+    let stored = read_spot(&env.svm, &spot);
+    assert_eq!(stored.current_bid, START);
+    assert_eq!(stored.current_bidder, alice.pubkey());
+    assert_eq!(read_listing(&env.svm, &listing).deadline, deadline);
+    assert_eq!(token_balance(&env.svm, &vault), START);
+
+    // Another bidder can still outbid, and then the first bidder can come back.
+    bid(
+        &mut env,
+        &bob,
+        &bob_ata,
+        &listing,
+        &spot,
+        &vault,
+        Some(alice_ata),
+        START + INCREMENT,
+    )
+    .unwrap();
+    bid(
+        &mut env,
+        &alice,
+        &alice_ata,
+        &listing,
+        &spot,
+        &vault,
+        Some(bob_ata),
+        START + 2 * INCREMENT,
+    )
+    .unwrap();
+    assert_eq!(read_spot(&env.svm, &spot).current_bidder, alice.pubkey());
 }

@@ -117,3 +117,26 @@ pub const SNIPE_EXTENSION_SECONDS: i64 = 30;
 #[constant]
 #[cfg(not(feature = "devnet-short-review"))]
 pub const SNIPE_EXTENSION_SECONDS: i64 = 5 * 60;
+
+/// Furthest a listing's delivery deadline may lie in the future at creation: 365 days. It bounds how
+/// long escrow can stay locked and keeps `delivery_deadline + review_window_seconds` far from overflow.
+#[constant]
+pub const MAX_LISTING_HORIZON_SECONDS: i64 = 365 * 24 * 60 * 60;
+
+/// Shortest guaranteed proof window `[artwork_close, delivery_deadline)`.
+#[constant]
+#[cfg(feature = "devnet-short-review")]
+pub const MIN_PROOF_WINDOW_SECONDS: i64 = 60;
+
+#[constant]
+#[cfg(not(feature = "devnet-short-review"))]
+pub const MIN_PROOF_WINDOW_SECONDS: i64 = 60 * 60;
+
+/// Largest allowed auction bid step, in USDC base units (6 decimals): 1,000,000 USDC. Keeps
+/// `current_bid + min_increment` representable.
+#[constant]
+pub const MAX_BID_INCREMENT: u64 = 1_000_000_000_000_u64;
+
+/// Decimals the payment mint must have; every price and the increment floor assume USDC's 6.
+#[constant]
+pub const PAYMENT_MINT_DECIMALS: u8 = 6;

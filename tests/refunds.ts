@@ -27,6 +27,17 @@ describe("funded spot refunds", () => {
     program.programId,
   );
 
+  // scripts/test-program.sh runs this suite on the devnet-short-review build, whose minimum proof
+  // window (delivery_deadline - artwork_close) is 60 s instead of 1 h.
+  const minProofWindowSeconds = 60;
+
+  async function setReviewAuthority(authority: anchor.web3.PublicKey) {
+    await program.methods
+      .updateReviewAuthority(authority)
+      .accountsStrict({ authority: wallet.publicKey, config, reviewAuthority })
+      .rpc();
+  }
+
   async function validatorTime(): Promise<number> {
     const clock = await provider.connection.getAccountInfo(anchor.web3.SYSVAR_CLOCK_PUBKEY);
     if (!clock) throw new Error("Validator clock is unavailable");
@@ -79,51 +90,59 @@ describe("funded spot refunds", () => {
     const now = await validatorTime();
     const deadline = now + deadlineOffset;
     const deliveryDeadline = now + deliveryOffset;
-    await program.methods
-      .createListing(
-        slugHash,
-        "ipfs://adspaces-validator-refund",
-        0,
-        new anchor.BN(deadline),
-        new anchor.BN(deadline),
-        new anchor.BN(deliveryDeadline),
-        new anchor.BN(48 * 60 * 60),
-        new anchor.BN(0),
-        false,
-        250,
-        0,
-        250,
-      )
-      .accountsStrict({
-        seller: wallet.publicKey,
-        reviewer: wallet.publicKey,
-        rentPayer: rentPayer.publicKey,
-        listing,
-        config,
-        reviewAuthority,
-        usdcMint: paymentMint,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .signers([rentPayer])
-      .rpc();
-    await program.methods
-      .addSpot(new anchor.BN(Number(price)))
-      .accountsStrict({
-        seller: wallet.publicKey,
-        rentPayer: rentPayer.publicKey,
-        reviewer: wallet.publicKey,
-        reviewAuthority,
-        config,
-        listing,
-        spot,
-        vault,
-        usdcMint: paymentMint,
-        systemProgram: anchor.web3.SystemProgram.programId,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-      })
-      .signers([rentPayer])
-      .rpc();
+    // The rent payer must be the review authority key. For a separate rent payer, make it the
+    // reviewer for the listing and its spot, then hand the role back to the provider wallet.
+    const separatePayer = rentPayer !== wallet.payer;
+    if (separatePayer) await setReviewAuthority(rentPayer.publicKey);
+    try {
+      await program.methods
+        .createListing(
+          slugHash,
+          "ipfs://adspaces-validator-refund",
+          0,
+          new anchor.BN(deadline),
+          new anchor.BN(deadline),
+          new anchor.BN(deliveryDeadline),
+          new anchor.BN(48 * 60 * 60),
+          new anchor.BN(0),
+          false,
+          250,
+          0,
+          250,
+        )
+        .accountsStrict({
+          seller: wallet.publicKey,
+          reviewer: rentPayer.publicKey,
+          rentPayer: rentPayer.publicKey,
+          listing,
+          config,
+          reviewAuthority,
+          usdcMint: paymentMint,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .signers([rentPayer])
+        .rpc();
+      await program.methods
+        .addSpot(new anchor.BN(Number(price)))
+        .accountsStrict({
+          seller: wallet.publicKey,
+          rentPayer: rentPayer.publicKey,
+          reviewer: rentPayer.publicKey,
+          reviewAuthority,
+          config,
+          listing,
+          spot,
+          vault,
+          usdcMint: paymentMint,
+          systemProgram: anchor.web3.SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        })
+        .signers([rentPayer])
+        .rpc();
+    } finally {
+      if (separatePayer) await setReviewAuthority(wallet.publicKey);
+    }
     await program.methods
       .claimSpot()
       .accountsStrict({
@@ -174,7 +193,7 @@ describe("funded spot refunds", () => {
     // A rent payer apart from the seller shows the rent goes to it, not the seller. It is also exact:
     // the provider wallet is the local validator's mint, too large for exact lamport math in a number.
     const { buyerAta, caller, deliveryDeadline, listing, paymentMint, rentPayer, spot, vault } =
-      await fundedSpot(8, 12, anchor.web3.Keypair.generate());
+      await fundedSpot(8, 8 + minProofWindowSeconds, anchor.web3.Keypair.generate());
     const refund = () =>
       program.methods
         .refundSpot()
@@ -200,7 +219,7 @@ describe("funded spot refunds", () => {
     expect(earlyRejected).to.equal(true);
     expect((await getAccount(provider.connection, vault)).amount).to.equal(price);
 
-    const timeout = Date.now() + 30_000;
+    const timeout = Date.now() + 120_000;
     while ((await validatorTime()) < deliveryDeadline) {
       if (Date.now() > timeout) throw new Error("Validator clock did not advance");
       await provider.sendAndConfirm(

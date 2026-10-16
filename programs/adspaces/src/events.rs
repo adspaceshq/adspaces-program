@@ -53,6 +53,7 @@ pub struct ListingCreated {
     pub fee_bps: u16,
     pub uplift_fee_bps: u16,
     pub max_fee_bps: u16,
+    pub treasury: Pubkey,
 }
 
 #[event]
@@ -100,6 +101,7 @@ pub struct SellerWithdrawn {
     pub seller: Pubkey,
     pub amount: u64,
     pub fee: u64,
+    pub treasury_ata: Pubkey,
 }
 
 #[event]
@@ -148,6 +150,7 @@ pub struct DisputeResolved {
     pub buyer_refund: u64,
     pub seller_amount: u64,
     pub fee: u64,
+    pub treasury_ata: Pubkey,
 }
 
 #[event]
