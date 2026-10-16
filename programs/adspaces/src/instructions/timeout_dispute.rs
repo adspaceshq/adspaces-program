@@ -5,7 +5,7 @@ use crate::{
     constants::*,
     error::AdspacesError,
     events::DisputeTimedOut,
-    rent::record_spot_closed,
+    rent::{record_spot_closed, require_proof_account},
     state::{Config, DisputeRecord, Listing, ProofRecord, Spot},
 };
 
@@ -69,6 +69,7 @@ pub struct TimeoutDispute<'info> {
 }
 
 pub fn handle_timeout_dispute(ctx: Context<TimeoutDispute>) -> Result<()> {
+    require_proof_account(&ctx.accounts.spot, ctx.accounts.proof.is_some())?;
     let now = Clock::get()?.unix_timestamp;
     let timeout_at = ctx
         .accounts

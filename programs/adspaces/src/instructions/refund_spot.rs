@@ -5,7 +5,7 @@ use crate::{
     constants::*,
     error::AdspacesError,
     events::SpotRefunded,
-    rent::record_spot_closed,
+    rent::{record_spot_closed, require_proof_account},
     state::{Listing, ProofRecord, Spot},
 };
 
@@ -55,6 +55,7 @@ pub struct RefundSpot<'info> {
 }
 
 pub fn handle_refund_spot(ctx: Context<RefundSpot>) -> Result<()> {
+    require_proof_account(&ctx.accounts.spot, ctx.accounts.proof.is_some())?;
     let seller_initiated = ctx.accounts.caller.key() == ctx.accounts.listing.seller;
     if !seller_initiated {
         require!(
