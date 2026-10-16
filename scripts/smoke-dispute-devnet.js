@@ -33,7 +33,9 @@ async function validatorTime(connection) {
 }
 
 async function waitUntil(connection, timestamp) {
-  const timeout = Date.now() + 90_000;
+  // The whole wait plus 90 s of slack for devnet clock drift.
+  const remaining = Math.max(0, timestamp - (await validatorTime(connection)));
+  const timeout = Date.now() + remaining * 1_000 + 90_000;
   while ((await validatorTime(connection)) < timestamp) {
     if (Date.now() > timeout) throw new Error("Timed out waiting for devnet clock");
     await new Promise((resolve) => setTimeout(resolve, 1_000));
@@ -113,11 +115,40 @@ async function main() {
       [Buffer.from("proof"), pending.account.spot.toBuffer()],
       PROGRAM_ID,
     );
+    // Spot, vault and proof rent go to the listing's rent payer; the dispute rent to whoever paid it.
+    const rentAccounts = {
+      rentPayer: pendingListing.rentPayer,
+      disputeRentPayer: pending.account.rentPayer,
+    };
+    const timeoutAt = pending.account.openedAt.toNumber() + pending.account.timeoutSeconds.toNumber();
+    if ((await validatorTime(connection)) >= timeoutAt) {
+      // Past the timeout only the full buyer refund remains; resolve_dispute is rejected.
+      const signature = await program.methods
+        .timeoutDispute()
+        .accountsStrict({
+          caller: seller.publicKey,
+          config,
+          listing: pendingSpot.listing,
+          spot: pending.account.spot,
+          dispute: pending.publicKey,
+          ...rentAccounts,
+          proof: pending.account.proofSubmitted ? pendingProof : null,
+          vault: pendingSpot.vault,
+          buyerAta,
+          usdcMint: PAYMENT_MINT,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc();
+      console.log(`Recovered dispute: ${pending.publicKey}`);
+      console.log(`Timeout refund: ${signature}`);
+      console.log("Pending devnet dispute timed out");
+      return;
+    }
     const signature = await program.methods
       .resolveDispute(5_000, Array(32).fill(3), "https://adspaces.fun/devnet-decision")
       .accountsStrict({
         resolver: seller.publicKey,
-        rentPayer: pending.account.rentPayer,
+        ...rentAccounts,
         config,
         listing: pendingSpot.listing,
         spot: pending.account.spot,
@@ -161,9 +192,15 @@ async function main() {
     [Buffer.from("dispute"), spot.toBuffer()],
     PROGRAM_ID,
   );
+  // The listing must leave at least MIN_PROOF_WINDOW_SECONDS between artwork close and delivery: 60 s
+  // with devnet-short-review, 1 h otherwise (the dispute waits for the delivery deadline).
+  const minProofWindow = Number(
+    program.idl.constants.find((constant) => constant.name === "MIN_PROOF_WINDOW_SECONDS")?.value ??
+      3_600,
+  );
   const now = await validatorTime(connection);
   const listingDeadline = now + 15;
-  const deliveryDeadline = now + 30;
+  const deliveryDeadline = listingDeadline + minProofWindow;
 
   await program.methods
     .createListing(
@@ -255,6 +292,7 @@ async function main() {
     .accountsStrict({
       resolver: seller.publicKey,
       rentPayer: seller.publicKey,
+      disputeRentPayer: seller.publicKey,
       config,
       listing,
       spot,

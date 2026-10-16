@@ -117,7 +117,8 @@ async function start() {
         console.log(`Refunded interrupted spot: ${candidate.publicKey}`);
         continue;
       }
-      await waitUntil(connection, candidateListing.deadline.toNumber());
+      // Proof is accepted from artwork close.
+      await waitUntil(connection, candidateListing.artworkClose.toNumber());
       const [candidateProof] = anchor.web3.PublicKey.findProgramAddressSync(
         [Buffer.from("proof"), candidate.publicKey.toBuffer()],
         PROGRAM_ID,
@@ -178,9 +179,15 @@ async function start() {
     [Buffer.from("proof"), spot.toBuffer()],
     PROGRAM_ID,
   );
+  // At least MIN_PROOF_WINDOW_SECONDS between artwork close and delivery (60 s with
+  // devnet-short-review, 1 h otherwise); it only moves the payout eligibility time.
+  const minProofWindow = Number(
+    program.idl.constants.find((constant) => constant.name === "MIN_PROOF_WINDOW_SECONDS")?.value ??
+      3_600,
+  );
   const now = await validatorTime(connection);
   const listingDeadline = now + 120;
-  const deliveryDeadline = now + 180;
+  const deliveryDeadline = listingDeadline + minProofWindow;
 
   await program.methods
     .createListing(
