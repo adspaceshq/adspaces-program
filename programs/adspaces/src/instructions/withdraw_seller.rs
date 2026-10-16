@@ -19,8 +19,10 @@ pub struct WithdrawSeller<'info> {
         bump = listing.bump,
     )]
     pub listing: Box<Account<'info, Listing>>,
+    /// CHECK: only compared by key and used as the seller_ata authority; any owner is accepted so a
+    /// program-owned seller key can still be paid.
     #[account(address = listing.seller @ AdspacesError::Unauthorized)]
-    pub seller: SystemAccount<'info>,
+    pub seller: UncheckedAccount<'info>,
     #[account(mut, address = listing.rent_payer @ AdspacesError::Unauthorized)]
     pub rent_payer: SystemAccount<'info>,
     #[account(
@@ -142,6 +144,7 @@ pub fn handle_withdraw_seller(ctx: Context<WithdrawSeller>) -> Result<()> {
         seller: ctx.accounts.seller.key(),
         amount: seller_amount,
         fee,
+        treasury_ata: ctx.accounts.treasury_ata.key(),
     });
 
     ctx.accounts

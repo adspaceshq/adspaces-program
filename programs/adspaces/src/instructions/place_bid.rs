@@ -71,6 +71,10 @@ pub fn handle_place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
 
     let current_bid = ctx.accounts.spot.current_bid;
     let current_bidder = ctx.accounts.spot.current_bidder;
+    require!(
+        ctx.accounts.bidder.key() != current_bidder,
+        AdspacesError::SelfOutbid
+    );
 
     if current_bidder == Pubkey::default() {
         require!(

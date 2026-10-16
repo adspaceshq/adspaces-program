@@ -14,6 +14,7 @@ pub struct CreateListing<'info> {
     pub seller: Signer<'info>,
     pub reviewer: Signer<'info>,
     /// Platform account that pays the rent for the listing and everything under it, and gets it back.
+    /// Must be the review authority key, so a seller can never hold the rent payer role.
     #[account(mut)]
     pub rent_payer: Signer<'info>,
     #[account(
@@ -35,6 +36,7 @@ pub struct CreateListing<'info> {
         bump = review_authority.bump,
         constraint = review_authority.config == config.key() @ AdspacesError::Unauthorized,
         constraint = review_authority.authority == reviewer.key() @ AdspacesError::InvalidReviewAuthority,
+        constraint = review_authority.authority == rent_payer.key() @ AdspacesError::InvalidRentPayer,
     )]
     pub review_authority: Account<'info, ReviewAuthority>,
     #[account(
@@ -79,6 +81,22 @@ pub fn handle_create_listing(
         delivery_deadline > artwork_close,
         AdspacesError::InvalidDeliveryDeadline
     );
+    let horizon = now
+        .checked_add(MAX_LISTING_HORIZON_SECONDS)
+        .ok_or(AdspacesError::MathOverflow)?;
+    // Bounds escrow lock time; with the ordering above it also bounds deadline and artwork_close.
+    require!(
+        delivery_deadline <= horizon,
+        AdspacesError::InvalidDeliveryDeadline
+    );
+    // Guaranteed proof window: bids never push the deadline past artwork_close.
+    require!(
+        delivery_deadline
+            .checked_sub(artwork_close)
+            .ok_or(AdspacesError::MathOverflow)?
+            >= MIN_PROOF_WINDOW_SECONDS,
+        AdspacesError::InvalidDeliveryDeadline
+    );
     require!(
         (MIN_REVIEW_WINDOW_SECONDS..=MAX_REVIEW_WINDOW_SECONDS).contains(&review_window_seconds),
         AdspacesError::InvalidReviewWindow
@@ -91,6 +109,11 @@ pub fn handle_create_listing(
             AdspacesError::InvalidMinIncrement
         );
     }
+    // Keeps current_bid + min_increment representable.
+    require!(
+        min_increment <= MAX_BID_INCREMENT,
+        AdspacesError::InvalidMinIncrement
+    );
     validate_fee_policy(
         mode,
         ctx.accounts.config.fee_bps,
@@ -130,6 +153,7 @@ pub fn handle_create_listing(
         fee_bps,
         uplift_fee_bps,
         max_fee_bps,
+        treasury: listing.treasury,
     });
 
     Ok(())

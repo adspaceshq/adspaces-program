@@ -2,7 +2,10 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::Mint;
 
 use crate::{
-    constants::CONFIG_SEED, error::AdspacesError, events::ConfigInitialized, state::Config,
+    constants::{CONFIG_SEED, PAYMENT_MINT_DECIMALS},
+    error::AdspacesError,
+    events::ConfigInitialized,
+    state::Config,
 };
 
 #[derive(Accounts)]
@@ -23,6 +26,7 @@ pub struct InitializeConfig<'info> {
         constraint = program_data.upgrade_authority_address == Some(authority.key()) @ AdspacesError::InvalidConfigAuthority,
     )]
     pub program_data: Account<'info, ProgramData>,
+    #[account(constraint = payment_mint.decimals == PAYMENT_MINT_DECIMALS @ AdspacesError::InvalidMint)]
     pub payment_mint: Account<'info, Mint>,
     pub system_program: Program<'info, System>,
 }

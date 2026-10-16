@@ -44,8 +44,8 @@ pub fn handle_submit_proof(
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     require!(
-        now >= ctx.accounts.listing.deadline,
-        AdspacesError::WithdrawTooEarly
+        now >= ctx.accounts.listing.artwork_close,
+        AdspacesError::ArtworkWindowOpen
     );
     require!(
         now < ctx.accounts.listing.delivery_deadline,
