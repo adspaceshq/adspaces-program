@@ -359,7 +359,7 @@ fn claim_after_deadline_fails() {
             mode: adspaces::constants::MODE_FIXED,
             deadline: now + 10,
             artwork_close: now + 10,
-            delivery_deadline: now + 20,
+            delivery_deadline: now + 10 + adspaces::constants::MIN_PROOF_WINDOW_SECONDS,
             review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
             min_increment: 0,
             double_up: false,
@@ -477,5 +477,186 @@ fn spot_added_without_the_review_authority_is_refused() {
             &[&stranger, &env.mint_authority],
         ),
         adspaces::error::AdspacesError::InvalidReviewAuthority,
+    );
+}
+
+#[allow(clippy::result_large_err, clippy::too_many_arguments)]
+fn try_create_listing_with(
+    env: &mut Env,
+    seller: &Keypair,
+    slug_hash: [u8; 16],
+    mode: u8,
+    artwork_close: i64,
+    delivery_deadline: i64,
+    min_increment: u64,
+    double_up: bool,
+) -> litesvm::types::TransactionResult {
+    let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
+    let now = env.clock().unix_timestamp;
+    let auction = mode == adspaces::constants::MODE_AUCTION;
+    let ix = new_ix(
+        program_id(),
+        adspaces::instruction::CreateListing {
+            slug_hash,
+            metadata_uri: "https://adspaces.test/api/listings/bounds".to_string(),
+            mode,
+            deadline: now + 86_400,
+            artwork_close,
+            delivery_deadline,
+            review_window_seconds: adspaces::constants::MAX_REVIEW_WINDOW_SECONDS,
+            min_increment,
+            double_up,
+            fee_bps: 250,
+            uplift_fee_bps: if auction { 2_000 } else { 0 },
+            max_fee_bps: if auction { 1_000 } else { 250 },
+        }
+        .data(),
+        adspaces::accounts::CreateListing {
+            seller: seller.pubkey(),
+            reviewer: env.mint_authority.pubkey(),
+            rent_payer: env.rent_payer(),
+            listing,
+            config: env.config,
+            review_authority: env.review_authority,
+            usdc_mint: env.usdc,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    env.svm.expire_blockhash();
+    send(&mut env.svm, &[ix], seller, &[&env.mint_authority])
+}
+
+#[test]
+fn listing_rejects_a_delivery_deadline_beyond_the_horizon() {
+    use adspaces::constants::{MAX_LISTING_HORIZON_SECONDS, MODE_FIXED};
+
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let horizon = now + MAX_LISTING_HORIZON_SECONDS;
+    let artwork_close = now + 2 * 86_400;
+
+    assert_program_error(
+        try_create_listing_with(
+            &mut env,
+            &seller,
+            [70; 16],
+            MODE_FIXED,
+            artwork_close,
+            horizon + 1,
+            0,
+            false,
+        ),
+        adspaces::error::AdspacesError::InvalidDeliveryDeadline,
+    );
+    // Far-future values that used to overflow delivery_deadline + review_window are refused too.
+    assert_program_error(
+        try_create_listing_with(
+            &mut env,
+            &seller,
+            [71; 16],
+            MODE_FIXED,
+            artwork_close,
+            i64::MAX,
+            0,
+            false,
+        ),
+        adspaces::error::AdspacesError::InvalidDeliveryDeadline,
+    );
+    try_create_listing_with(
+        &mut env,
+        &seller,
+        [72; 16],
+        MODE_FIXED,
+        artwork_close,
+        horizon,
+        0,
+        false,
+    )
+    .unwrap();
+    let (listing, _) = listing_pda(&seller.pubkey(), &[72; 16]);
+    assert_eq!(read_listing(&env.svm, &listing).delivery_deadline, horizon);
+}
+
+#[test]
+fn listing_rejects_a_proof_window_below_the_minimum() {
+    use adspaces::constants::{MIN_PROOF_WINDOW_SECONDS, MODE_FIXED};
+
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let artwork_close = now + 2 * 86_400;
+
+    assert_program_error(
+        try_create_listing_with(
+            &mut env,
+            &seller,
+            [73; 16],
+            MODE_FIXED,
+            artwork_close,
+            artwork_close + MIN_PROOF_WINDOW_SECONDS - 1,
+            0,
+            false,
+        ),
+        adspaces::error::AdspacesError::InvalidDeliveryDeadline,
+    );
+    try_create_listing_with(
+        &mut env,
+        &seller,
+        [74; 16],
+        MODE_FIXED,
+        artwork_close,
+        artwork_close + MIN_PROOF_WINDOW_SECONDS,
+        0,
+        false,
+    )
+    .unwrap();
+}
+
+#[test]
+fn listing_rejects_an_oversized_min_increment() {
+    use adspaces::constants::{MAX_BID_INCREMENT, MODE_AUCTION};
+
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let artwork_close = now + 2 * 86_400;
+    let delivery = now + 9 * 86_400;
+
+    // The cap holds with and without double-up, so the stored step is always representable.
+    for (slug, double_up) in [([75; 16], false), ([76; 16], true)] {
+        assert_program_error(
+            try_create_listing_with(
+                &mut env,
+                &seller,
+                slug,
+                MODE_AUCTION,
+                artwork_close,
+                delivery,
+                MAX_BID_INCREMENT + 1,
+                double_up,
+            ),
+            adspaces::error::AdspacesError::InvalidMinIncrement,
+        );
+    }
+    try_create_listing_with(
+        &mut env,
+        &seller,
+        [77; 16],
+        MODE_AUCTION,
+        artwork_close,
+        delivery,
+        MAX_BID_INCREMENT,
+        false,
+    )
+    .unwrap();
+    let (listing, _) = listing_pda(&seller.pubkey(), &[77; 16]);
+    assert_eq!(
+        read_listing(&env.svm, &listing).min_increment,
+        MAX_BID_INCREMENT
     );
 }

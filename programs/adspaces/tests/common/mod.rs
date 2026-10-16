@@ -370,6 +370,19 @@ pub fn lamports(svm: &LiteSVM, account: &Pubkey) -> u64 {
     svm.get_account(account).map(|a| a.lamports).unwrap_or(0)
 }
 
+/// The transaction emitted exactly this event.
+pub fn assert_event<E: anchor_lang::Event>(meta: &litesvm::types::TransactionMetadata, event: &E) {
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(event.data());
+    assert!(
+        meta.logs
+            .iter()
+            .any(|log| log == &format!("Program data: {encoded}")),
+        "event not emitted; logs: {:#?}",
+        meta.logs
+    );
+}
+
 /// The single-instruction transaction failed with exactly this program error.
 pub fn assert_program_error(
     result: litesvm::types::TransactionResult,

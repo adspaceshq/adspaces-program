@@ -21,11 +21,6 @@ fn create_listing(
 ) -> litesvm::types::TransactionResult {
     let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
     let now = env.clock().unix_timestamp;
-    // Not the reviewer, so leaving out the reviewer's signature really leaves it out.
-    let rent_payer = Keypair::new();
-    env.svm
-        .airdrop(&rent_payer.pubkey(), 1_000_000_000)
-        .unwrap();
     let ix = new_ix(
         program_id(),
         adspaces::instruction::CreateListing {
@@ -37,7 +32,7 @@ fn create_listing(
             delivery_deadline: now + 2 * 86_400,
             review_window_seconds,
             min_increment: if mode == adspaces::constants::MODE_AUCTION {
-                1
+                adspaces::constants::MIN_BID_INCREMENT
             } else {
                 0
             },
@@ -50,7 +45,8 @@ fn create_listing(
         adspaces::accounts::CreateListing {
             seller: seller.pubkey(),
             reviewer: reviewer.pubkey(),
-            rent_payer: rent_payer.pubkey(),
+            // The rent payer must be the review authority key, so it is the reviewer here too.
+            rent_payer: reviewer.pubkey(),
             listing,
             config: env.config,
             review_authority: env.review_authority,
@@ -60,9 +56,9 @@ fn create_listing(
         .to_account_metas(None),
     );
     let signers = if include_reviewer_signature {
-        vec![reviewer, &rent_payer]
+        vec![reviewer]
     } else {
-        vec![&rent_payer]
+        vec![]
     };
     send(&mut env.svm, &[ix], seller, &signers)
 }
@@ -102,19 +98,23 @@ fn listing_rejects_an_unconfigured_reviewer() {
     let reviewer = Keypair::new();
     env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
 
-    assert!(create_listing(
-        &mut env,
-        &seller,
-        &reviewer,
-        true,
-        adspaces::constants::MODE_FIXED,
-        250,
-        0,
-        250,
-        adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
-        [42; 16],
-    )
-    .is_err());
+    // Funded, so the failure is the reviewer check and not the rent.
+    env.svm.airdrop(&reviewer.pubkey(), 10_000_000_000).unwrap();
+    assert_program_error(
+        create_listing(
+            &mut env,
+            &seller,
+            &reviewer,
+            true,
+            adspaces::constants::MODE_FIXED,
+            250,
+            0,
+            250,
+            adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
+            [42; 16],
+        ),
+        adspaces::error::AdspacesError::InvalidReviewAuthority,
+    );
 }
 
 #[test]
@@ -228,4 +228,88 @@ fn reviewer_sets_a_bounded_listing_review_window() {
         )
         .is_err());
     }
+}
+
+#[allow(clippy::result_large_err)]
+fn create_listing_paid_by(
+    env: &mut Env,
+    seller: &Keypair,
+    rent_payer: &Keypair,
+    slug_hash: [u8; 16],
+) -> litesvm::types::TransactionResult {
+    let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
+    let now = env.clock().unix_timestamp;
+    let ix = new_ix(
+        program_id(),
+        adspaces::instruction::CreateListing {
+            slug_hash,
+            metadata_uri: "https://adspaces.test/rent-payer".to_string(),
+            mode: adspaces::constants::MODE_FIXED,
+            deadline: now + 86_400,
+            artwork_close: now + 86_400,
+            delivery_deadline: now + 2 * 86_400,
+            review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
+            min_increment: 0,
+            double_up: false,
+            fee_bps: 250,
+            uplift_fee_bps: 0,
+            max_fee_bps: 250,
+        }
+        .data(),
+        adspaces::accounts::CreateListing {
+            seller: seller.pubkey(),
+            reviewer: env.mint_authority.pubkey(),
+            rent_payer: rent_payer.pubkey(),
+            listing,
+            config: env.config,
+            review_authority: env.review_authority,
+            usdc_mint: env.usdc,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    let reviewer = env.mint_authority.insecure_clone();
+    send(&mut env.svm, &[ix], seller, &[&reviewer, rent_payer])
+}
+
+#[test]
+fn listing_rejects_a_rent_payer_that_is_not_the_review_authority() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let other = Keypair::new();
+    env.svm.airdrop(&other.pubkey(), 10_000_000_000).unwrap();
+
+    // Even with the reviewer's approval, neither the seller nor any other wallet can hold the rent
+    // payer role (and with it the dispute co-signature).
+    for (rent_payer, slug_hash) in [(&seller, [60; 16]), (&other, [61; 16])] {
+        assert_program_error(
+            create_listing_paid_by(&mut env, &seller, rent_payer, slug_hash),
+            adspaces::error::AdspacesError::InvalidRentPayer,
+        );
+        let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
+        assert!(env.svm.get_account(&listing).is_none());
+    }
+
+    let reviewer = env.mint_authority.insecure_clone();
+    let meta = create_listing_paid_by(&mut env, &seller, &reviewer, [62; 16]).unwrap();
+    let (listing, _) = listing_pda(&seller.pubkey(), &[62; 16]);
+    let stored = read_listing(&env.svm, &listing);
+    assert_eq!(stored.rent_payer, reviewer.pubkey());
+    // The event carries the treasury the listing's fees will go to.
+    assert_event(
+        &meta,
+        &adspaces::events::ListingCreated {
+            listing,
+            seller: seller.pubkey(),
+            slug_hash: [62; 16],
+            mode: adspaces::constants::MODE_FIXED,
+            review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
+            fee_bps: 250,
+            uplift_fee_bps: 0,
+            max_fee_bps: 250,
+            treasury: env.treasury,
+        },
+    );
+    assert_eq!(stored.treasury, env.treasury);
 }

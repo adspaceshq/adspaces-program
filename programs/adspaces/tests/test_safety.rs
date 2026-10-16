@@ -452,6 +452,7 @@ fn timed_out_dispute_refunds_buyer_in_full() {
             spot,
             dispute,
             rent_payer: read_dispute(&env.svm, &dispute).rent_payer,
+            dispute_rent_payer: read_dispute(&env.svm, &dispute).rent_payer,
             proof: None,
             vault,
             buyer_ata,
@@ -722,6 +723,7 @@ fn shortening_the_timeout_does_not_end_an_open_dispute_early() {
             spot,
             dispute,
             rent_payer: read_dispute(&env.svm, &dispute).rent_payer,
+            dispute_rent_payer: read_dispute(&env.svm, &dispute).rent_payer,
             proof: None,
             vault,
             buyer_ata,
@@ -1010,8 +1012,8 @@ fn payouts_refunds_and_disputes_still_settle_while_guardian_paused() {
     }
     guardian_pause(&mut env, &guardian).unwrap();
 
-    // The seller delivers on one spot and refunds another, both while paused.
-    env.warp_to_timestamp(now + DAY);
+    // The seller delivers on one spot (from artwork close) and refunds another, both while paused.
+    env.warp_to_timestamp(now + DAY + 3_600);
     let (paid_proof, _) = proof_pda(&paid_spot);
     let proof = new_ix(
         program_id(),
@@ -1115,6 +1117,7 @@ fn payouts_refunds_and_disputes_still_settle_while_guardian_paused() {
             spot: disputed_spot,
             dispute,
             rent_payer: env.rent_payer(),
+            dispute_rent_payer: env.rent_payer(),
             proof: None,
             vault: disputed_vault,
             buyer_ata: buyers[2].1,

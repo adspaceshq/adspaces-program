@@ -283,3 +283,34 @@ fn authority_can_cancel_and_replace_a_pending_transfer() {
         second.pubkey()
     );
 }
+
+#[test]
+fn initialize_config_rejects_a_non_6_decimal_mint() {
+    use spl_token_interface::state::Mint;
+
+    let mut env = Env::uninitialized();
+    let authority = copy_keypair(&env.mint_authority);
+    let original = env.svm.get_account(&env.usdc).unwrap();
+    let set_decimals = |env: &mut Env, decimals: u8| {
+        let mut account = original.clone();
+        let mut mint = Mint::unpack(&account.data).unwrap();
+        mint.decimals = decimals;
+        Mint::pack(mint, &mut account.data).unwrap();
+        env.svm.set_account(env.usdc, account).unwrap();
+    };
+
+    for decimals in [0, 2, 9] {
+        set_decimals(&mut env, decimals);
+        env.svm.expire_blockhash();
+        assert_program_error(
+            initialize_config(&mut env, &authority),
+            adspaces::error::AdspacesError::InvalidMint,
+        );
+        assert!(env.svm.get_account(&env.config).is_none());
+    }
+
+    set_decimals(&mut env, adspaces::constants::PAYMENT_MINT_DECIMALS);
+    env.svm.expire_blockhash();
+    initialize_config(&mut env, &authority).unwrap();
+    assert_eq!(read_config(&env.svm, &env.config).payment_mint, env.usdc);
+}
