@@ -6,7 +6,7 @@ use crate::{
     error::AdspacesError,
     events::DisputeResolved,
     fees::calculate_dispute_fee,
-    rent::record_spot_closed,
+    rent::{record_spot_closed, require_proof_account},
     state::{Config, DisputeRecord, Listing, ProofRecord, Spot},
 };
 
@@ -88,6 +88,7 @@ pub fn handle_resolve_dispute(
     decision_hash: [u8; 32],
     decision_uri: String,
 ) -> Result<()> {
+    require_proof_account(&ctx.accounts.spot, ctx.accounts.proof.is_some())?;
     require!(seller_share_bps <= 10_000, AdspacesError::InvalidFeeBps);
     require!(
         decision_hash != [0; 32]

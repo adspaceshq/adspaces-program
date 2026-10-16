@@ -98,4 +98,6 @@ pub enum AdspacesError {
     InvalidDisputeTimeout,
     #[msg("Pause guardian must be a nondefault address.")]
     InvalidPauseGuardian,
+    #[msg("The spot has a proof record; pass it so it closes with the spot.")]
+    ProofAccountRequired,
 }

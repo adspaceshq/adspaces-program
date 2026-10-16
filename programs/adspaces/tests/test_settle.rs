@@ -1731,3 +1731,73 @@ fn instructions_reject_a_rent_payer_other_than_the_listings() {
     );
     assert!(env.svm.get_account(&listing).is_some());
 }
+
+/// The same instruction with the optional proof account left out (Anchor's program-id placeholder).
+fn without_proof(ix: &Instruction, proof: &Pubkey) -> Instruction {
+    let mut ix = ix.clone();
+    for account in ix.accounts.iter_mut() {
+        if account.pubkey == *proof {
+            account.pubkey = program_id();
+            account.is_writable = false;
+        }
+    }
+    ix
+}
+
+#[test]
+fn closing_a_spot_with_proof_requires_its_proof_record() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+    let now = env.clock().unix_timestamp;
+    let listing = create_fixed_listing(&mut env, &seller, [41; 16], now + 30 * 86_400);
+    let (spot, vault) = add_spot_to(&mut env, &seller, &listing, PRICE);
+    let (buyer, buyer_ata) = env.new_user(PRICE);
+    claim(&mut env, &buyer, &buyer_ata, &listing, &spot, &vault);
+    env.warp_to_timestamp(now + 30 * 86_400 + 1);
+    submit_proof(&mut env, &seller, &listing, &spot);
+    let (proof, _) = proof_pda(&spot);
+
+    // A seller refund that leaves the proof record out is refused.
+    let refund_ix = new_ix(
+        program_id(),
+        adspaces::instruction::RefundSpot {}.data(),
+        adspaces::accounts::RefundSpot {
+            caller: seller.pubkey(),
+            listing,
+            rent_payer: env.rent_payer(),
+            spot,
+            vault,
+            buyer_ata,
+            usdc_mint: env.usdc,
+            token_program: token_program_id(),
+            proof: None,
+        }
+        .to_account_metas(None),
+    );
+    assert_program_error(
+        send(&mut env.svm, &[refund_ix], &seller, &[]),
+        adspaces::error::AdspacesError::ProofAccountRequired,
+    );
+
+    // Neither can anyone time out the dispute without it; with it, every account closes.
+    env.warp_to_timestamp(read_listing(&env.svm, &listing).delivery_deadline);
+    dispute(&mut env, &buyer, &listing, &spot).unwrap();
+    let opened_at = read_dispute(&env.svm, &dispute_pda(&spot).0).opened_at;
+    env.warp_to_timestamp(opened_at + adspaces::constants::DEFAULT_DISPUTE_TIMEOUT_SECONDS + 1);
+    let caller = funded_keypair(&mut env);
+    let timeout = timeout_ix(&env, &caller.pubkey(), &listing, &spot, &vault, &buyer_ata);
+    assert_program_error(
+        send(
+            &mut env.svm,
+            &[without_proof(&timeout, &proof)],
+            &caller,
+            &[],
+        ),
+        adspaces::error::AdspacesError::ProofAccountRequired,
+    );
+    send(&mut env.svm, &[timeout], &caller, &[]).unwrap();
+    assert!(env.svm.get_account(&proof).is_none());
+    assert!(env.svm.get_account(&spot).is_none());
+    assert_eq!(token_balance(&env.svm, &buyer_ata), PRICE);
+}

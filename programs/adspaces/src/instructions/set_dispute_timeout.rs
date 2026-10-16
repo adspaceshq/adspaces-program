@@ -19,7 +19,7 @@ pub struct SetDisputeTimeout<'info> {
     pub config: Account<'info, Config>,
 }
 
-// Applies to every open dispute, including ones raised before the change.
+// Applies to disputes raised after the change; each dispute keeps the timeout it was raised with.
 pub fn handle_set_dispute_timeout(ctx: Context<SetDisputeTimeout>, seconds: i64) -> Result<()> {
     require!(
         (MIN_DISPUTE_TIMEOUT_SECONDS..=MAX_DISPUTE_TIMEOUT_SECONDS).contains(&seconds),

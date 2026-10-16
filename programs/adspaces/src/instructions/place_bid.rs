@@ -155,9 +155,9 @@ pub fn handle_place_bid(ctx: Context<PlaceBid>, amount: u64) -> Result<()> {
     let snipe_threshold = deadline
         .checked_sub(SNIPE_WINDOW_SECONDS)
         .ok_or(AdspacesError::MathOverflow)?;
-    // Extensions stop one second before the delivery deadline, so bidding can never run into the
-    // window where proof is due and anyone can refund a live auction.
-    let extension_cap = ctx.accounts.listing.delivery_deadline.checked_sub(1).ok_or(AdspacesError::MathOverflow)?;
+    // Extensions stop at artwork_close, so bidders can never eat into the window the seller set for
+    // delivering proof (artwork_close to delivery_deadline), nor run into the refund window.
+    let extension_cap = ctx.accounts.listing.artwork_close;
     if now >= snipe_threshold && deadline < extension_cap {
         let new_deadline = deadline
             .checked_add(SNIPE_EXTENSION_SECONDS)
