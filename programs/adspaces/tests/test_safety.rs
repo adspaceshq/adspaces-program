@@ -37,7 +37,7 @@ fn try_create_listing(
             metadata_uri: "https://adspaces.test/safety".to_string(),
             mode,
             deadline,
-            artwork_close: deadline,
+            artwork_close: deadline + 3_600,
             delivery_deadline: deadline + 7 * DAY,
             review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
             min_increment: if auction { 10_000_000 } else { 0 },

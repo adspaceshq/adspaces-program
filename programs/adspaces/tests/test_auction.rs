@@ -27,11 +27,13 @@ fn create_auction_listing(
         min_increment,
         double_up,
         30 * 86_400,
+        30 * 86_400 + 3_600,
         37 * 86_400,
     )
 }
 
-// `deadline_offset` is the bidding deadline; artwork closes with it, and delivery is due at `delivery_offset`.
+// `deadline_offset` is the bidding deadline, anti-snipe extensions stop at `artwork_offset`, and
+// delivery is due at `delivery_offset`.
 #[allow(clippy::too_many_arguments)]
 fn create_auction_listing_timed(
     env: &mut Env,
@@ -40,6 +42,7 @@ fn create_auction_listing_timed(
     min_increment: u64,
     double_up: bool,
     deadline_offset: i64,
+    artwork_offset: i64,
     delivery_offset: i64,
 ) -> Pubkey {
     let (listing, _) = listing_pda(&seller.pubkey(), &slug_hash);
@@ -51,7 +54,7 @@ fn create_auction_listing_timed(
             metadata_uri: "https://adspaces.test/api/listings/auction".to_string(),
             mode: adspaces::constants::MODE_AUCTION,
             deadline: now + deadline_offset,
-            artwork_close: now + deadline_offset,
+            artwork_close: now + artwork_offset,
             delivery_deadline: now + delivery_offset,
             review_window_seconds: adspaces::constants::DEFAULT_REVIEW_WINDOW_SECONDS,
             min_increment,
@@ -459,12 +462,12 @@ fn listing_rejects_dust_bid_steps() {
 }
 
 #[test]
-fn anti_snipe_extension_stops_at_delivery_deadline() {
+fn anti_snipe_extension_stops_at_artwork_close() {
     let mut env = Env::new();
     let seller = Keypair::new();
     env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
 
-    // Delivery is due only 120 seconds after bidding closes, so one snipe extension would overshoot it.
+    // Bidding may run at most 120 seconds late; the seller's proof window after that is untouched.
     let listing = create_auction_listing_timed(
         &mut env,
         &seller,
@@ -473,10 +476,11 @@ fn anti_snipe_extension_stops_at_delivery_deadline() {
         false,
         30 * 86_400,
         30 * 86_400 + 120,
+        31 * 86_400,
     );
     let (spot, vault) = spot_and_vault(&listing);
     let before = read_listing(&env.svm, &listing);
-    let cap = before.delivery_deadline - 1;
+    let cap = before.artwork_close;
 
     let (alice, alice_ata) = env.new_user(1_000_000_000);
     env.warp_to_timestamp(before.deadline - 10);
@@ -500,5 +504,35 @@ fn anti_snipe_extension_stops_at_delivery_deadline() {
         START + INCREMENT,
     )
     .unwrap();
-    assert_eq!(read_listing(&env.svm, &listing).deadline, cap);
+    let after = read_listing(&env.svm, &listing);
+    assert_eq!(after.deadline, cap);
+    assert_eq!(after.delivery_deadline, before.delivery_deadline);
+}
+
+#[test]
+fn listing_with_artwork_close_at_deadline_never_extends() {
+    let mut env = Env::new();
+    let seller = Keypair::new();
+    env.svm.airdrop(&seller.pubkey(), 10_000_000_000).unwrap();
+
+    let listing = create_auction_listing_timed(
+        &mut env,
+        &seller,
+        [13u8; 16],
+        INCREMENT,
+        false,
+        30 * 86_400,
+        30 * 86_400,
+        31 * 86_400,
+    );
+    let (spot, vault) = spot_and_vault(&listing);
+    let before = read_listing(&env.svm, &listing);
+
+    let (alice, alice_ata) = env.new_user(1_000_000_000);
+    env.warp_to_timestamp(before.deadline - 10);
+    bid(
+        &mut env, &alice, &alice_ata, &listing, &spot, &vault, None, START,
+    )
+    .unwrap();
+    assert_eq!(read_listing(&env.svm, &listing).deadline, before.deadline);
 }
